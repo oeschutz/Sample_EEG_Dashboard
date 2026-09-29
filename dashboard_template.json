@@ -1,0 +1,313 @@
+{
+  "_what_this_is": "The complete input contract for build_dashboard.py. It is valid JSON so you can load it, but it is documentation: keys beginning with an underscore are annotations, not data. A real tree has no underscore keys.",
+
+  "_how_to_use_it": [
+    "build_dashboard.py reads FOUR things and nothing else. It never touches a raw recording.",
+    "If your processing code can emit these four, you get the dashboard - whatever produced the numbers.",
+    "generate_template_data.py, beside this file, writes a complete, valid example of all four. Run it, diff your own exporter against what it produces, and you are done.",
+    "Every field below is annotated with whether the dashboard actually READS it. Fields marked read=false are written by pipeline.py and kept for provenance; the dashboard ignores them."
+  ],
+
+  "_the_four_inputs": {
+    "outputs/cognitive_load.json": "One entry per TASK recording: identity, status, QC, and which baseline it pairs with.",
+    "outputs/baselines.json": "One entry per BASELINE recording, each carrying its segments.",
+    "outputs/variants/index.json": "The sweep manifest: every axis, every threshold, and one entry per swept unit.",
+    "outputs/variants/*_e<NN.N>.npz": "The numbers. Two files per window length - tasks and baselines."
+  },
+
+  "_units_and_keys": {
+    "recording key": "'<participant>/<recording>', e.g. 't01/task_agent_personal'. Used as the key in cognitive_load.json and baselines.json.",
+    "archive key": "The same string for a task. For a baseline it is segment-qualified: '<participant>/<recording>::<segment>'. Each baseline segment is its own swept unit because each is cropped and calibrated on its own samples.",
+    "array_prefix": "The archive key with '/' replaced by '~'. This is what every array name inside the .npz files starts with.",
+    "amplitudes": "microvolts, robust standard deviation (MAD/0.6745), unless a field name says otherwise",
+    "times": "seconds from the start of the segment",
+    "arm and framing": "read from the recording NAME by build_dashboard.condition_label(): '_agent_' / '_ai_' / '_none_' and 'personal' / 'speedscore'. Rename your recordings to match, or edit that function."
+  },
+
+  "files": {
+
+    "outputs/cognitive_load.json": {
+      "_shape": "{ run_meta, tasks: { <recording key>: <entry> } }",
+      "run_meta": {
+        "_read": "partial_run only",
+        "partial_run": {
+          "_read": true,
+          "_note": "true makes build_dashboard.py REFUSE. A filtered pipeline run must not produce a published dashboard.",
+          "_example": false
+        },
+        "_other_fields": "generated_utc, argv, n_discovered, n_processed, excluded_participants, excluded_recordings, parameters - kept for provenance, not read here."
+      },
+      "tasks": {
+        "<recording key>": {
+          "participant": {"_read": true, "_example": "t01"},
+          "recording": {"_read": true, "_example": "task_agent_personal", "_note": "arm and framing are parsed out of this string"},
+          "status": {"_read": true, "_example": "ok", "_note": "anything other than 'ok' sends the recording to the excluded table instead of the charts"},
+          "exclusion_reason": {"_read": true, "_example": null, "_note": "printed verbatim in the excluded table. A status token alone tells the reader nothing."},
+          "baseline_key": {"_read": true, "_example": "t01/baseline_agent_personal", "_note": "must exist in baselines.json"},
+          "qc_segment": {
+            "_read": "segment_duration_s, segment_elapsed_s, n_internal_gaps, max_internal_gap_s, repair, notes",
+            "segment_duration_s": {"_read": true, "_example": 600.0},
+            "segment_elapsed_s": {"_read": true, "_example": 600.0, "_note": "wall-clock span. Differs from duration when samples were excised."},
+            "n_internal_gaps": {"_read": true, "_example": 0},
+            "max_internal_gap_s": {"_read": true, "_example": 0.0},
+            "repair": {"_read": true, "_example": null, "_note": "a sentence describing any splice, shown on the panel"},
+            "notes": {"_read": true, "_example": ["clean pair"]}
+          },
+          "qc_bandpass": {
+            "per_channel": {
+              "_read": "robust_sd_uv, for the five channels in peak_channels",
+              "_note": "Amplitude AS RECORDED: after filtering, before interpolation, in the hardware reference. This is what the quality badge judges against the derived band. Deliberately not the amplitude of whatever is currently plotted.",
+              "F1": {"robust_sd_uv": 180.0, "sd_uv": 324.0, "pct_over_70uv": 99.0, "peak_to_peak_uv": 2520.0}
+            }
+          },
+          "qc_interp": {
+            "none": {
+              "bad_channels_detected": {
+                "_read": true,
+                "_example": ["F1", "F2"],
+                "_note": "THE PAIRED LIST. Decided once per task/baseline pair, from the task concatenated with the rest segment of its baseline, and interpolated identically in both. Detecting per recording puts a spline on one side of a ratio and raw artifact on the other - it disagreed in 14 of 22 pairs on the real dataset."
+              }
+            },
+            "example": {"_read": false, "_note": "the reference notebook's own per-recording detection, kept so that step is reproducible"}
+          },
+          "qc_ocular": {
+            "_read": "a whitelist of keys per mode, shown on the panel",
+            "_whitelist": ["degenerate", "max_abs_coefficient", "n_components_removed", "variance_removed_pct", "max_abs_eog_correlation", "failed", "converged", "paired", "sd_reduction_by_channel_pct"],
+            "_note": "One entry per ocular mode. The baseline's own qc_ocular is read too and shown on the TASK panel - a correction that injects artifact into the baseline corrupts the denominator of every value there.",
+            "none": {"paired": true},
+            "eog_regression": {"paired": true, "degenerate": false, "max_abs_coefficient": 0.41},
+            "ica": {"paired": true, "converged": true, "n_components_removed": 1, "variance_removed_pct": 8.4, "max_abs_eog_correlation": 0.62}
+          },
+          "holm": {"_read": false, "_note": "per-window index. Written by pipeline.py; the dashboard reads the .npz arrays instead."},
+          "measures": {"_read": false},
+          "measure_times_s": {"_read": false},
+          "qc_holm": {"_read": false},
+          "qc_gate": {"_read": false, "_note": "vestigial. The amplitude gate was removed in 2026-09; nothing is withheld."}
+        }
+      }
+    },
+
+    "outputs/baselines.json": {
+      "_shape": "{ run_meta, baselines: { <recording key>: <entry> } }",
+      "baselines": {
+        "<recording key>": {
+          "participant": {"_read": true, "_example": "t01"},
+          "recording": {"_read": true, "_example": "baseline_agent_personal"},
+          "status": {"_read": true, "_example": "ok"},
+          "exclusion_reason": {"_read": true, "_example": null},
+          "baseline": {
+            "_note": "null when status is not ok",
+            "block_duration_s": {"_read": true, "_example": 360.0},
+            "interpolated": {
+              "_read": true,
+              "_example": ["F1", "F2"],
+              "_note": "MUST equal the paired task's bad_channels_detected. Both sides of every ratio are interpolated on one list."
+            },
+            "segments": {
+              "_note": "One entry per baseline segment. The keys must match index.json's baseline_segment_order.",
+              "<segment name>": {
+                "amplitude": {
+                  "_read": "robust_sd_uv per channel",
+                  "_note": "Per segment, not per block. The eyes-closed slice can be a very different electrode picture from the rest phase - 8 of 22 baselines differed on the real dataset.",
+                  "Pz": {"robust_sd_uv": 21.4, "plausible": true}
+                },
+                "implausible_channels": {"_read": true, "_example": ["F1", "F2"], "_note": "channels outside the derived amplitude band"},
+                "n_windows": {"_read": true, "_example": 30},
+                "bounds_s": {"_read": false},
+                "duration_s": {"_read": false},
+                "ocular": {"_read": false},
+                "variant_default_check": {"_read": false}
+              }
+            },
+            "segment_bounds_s": {"_read": false},
+            "segment_order": {"_read": false},
+            "default_segment": {"_read": false}
+          },
+          "qc_segment": {"_read": "notes, used to explain an unusable baseline"},
+          "qc_ocular": {"_read": true, "_note": "same whitelist as the task's; shown on the paired task's panel"},
+          "qc_baseline": {"_read": false}
+        }
+      }
+    },
+
+    "outputs/variants/index.json": {
+      "_note": "The manifest. build_dashboard.py validates this hard and refuses rather than building something wrong - see _refusals at the end of this file.",
+
+      "run_meta": {
+        "parameters": {
+          "bad_channel_detection": {
+            "_read": true,
+            "_required_value": "paired",
+            "_note": "Anything else is a REFUSAL. It is the record that one bad-channel list was decided per task/baseline pair."
+          }
+        }
+      },
+
+      "value_keys": {
+        "_read": true,
+        "_value": ["fm_theta", "parietal_alpha", "parietal_beta_asym", "frontal_alpha_asym", "theta_f1", "theta_f2", "alpha_holm_pz"],
+        "_note": "COLUMN ORDER of every ::v:: array. Load-bearing."
+      },
+      "peak_channels": {
+        "_read": true,
+        "_value": ["F1", "F2", "P3", "P4", "Pz"],
+        "_note": "COLUMN ORDER of every ::p:: and ::s:: array. Load-bearing."
+      },
+      "epochs_s": {"_read": true, "_value": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0], "_note": "one .npz pair per entry"},
+      "fft_methods": {"_read": true, "_value": ["hann", "multitaper", "welch", "boxcar"]},
+      "references": {"_read": true, "_value": ["hardware", "average", "rest"]},
+      "ocular_modes": {
+        "_read": true,
+        "_value": ["none", "eog_regression", "ica"],
+        "_note": "Checked for ORDERED equality against the page's own list. Position matters: the first entry is taken as the uncorrected branch."
+      },
+      "interpolation_modes": {
+        "_read": true,
+        "_value": ["off", "on", "on_keepfrontal", "manual", "manual_keepfrontal"],
+        "_note": "Also checked for ordered equality. 'on'/'manual' are the source; '_keepfrontal' is the same source with the frontal pair held back."
+      },
+      "interpolation_sources": {"_read": true, "_value": ["off", "on", "manual"]},
+      "interpolation_frontal_pair": {"_read": true, "_value": ["F1", "F2"]},
+      "manual_interpolation": {"_read": true, "_example": {"t01|agent": ["F1", "F2"]}, "_note": "keyed '<participant>|<arm>'; shown on the page as the hand-picked list"},
+      "default_interpolation_mode": {"_read": true, "_value": "on"},
+
+      "baseline_segments": {"_read": true, "_value": {"rest": [240.0, 360.0], "math": [0.0, 120.0], "eyes_closed": [225.0, 240.0]}},
+      "baseline_segment_order": {"_read": true, "_value": ["rest", "math", "eyes_closed"]},
+      "default_baseline_segment": {"_read": true, "_value": "rest"},
+
+      "robust_slide_choices_s": {"_read": true, "_value": [10.0, 20.0, 30.0], "_note": "the Calibration window toggle. One stored sigma matrix per entry, which is why it is a toggle and not a slider."},
+      "robust_slide_default_s": {"_read": true, "_value": 30.0},
+      "motion_sources": {"_read": true, "_value": ["accel_jerk", "gyro"]},
+      "default_motion_source": {"_read": true, "_value": "accel_jerk"},
+      "motion_columns": {"_read": true, "_value": ["accel_jerk", "gyro", "n_aux_samples"], "_note": "COLUMN ORDER of every ::m::imu array"},
+      "motion_min_samples": {"_read": true, "_value": 10},
+      "motion_k": {"_read": true, "_value": {"min": 1.0, "max": 8.0, "step": 0.25, "default": 3.0}},
+      "sliders": {"_read": true, "_value": {"robust_sigma": {"min": 1.0, "max": 12.0, "step": 0.25, "default": 5.0}, "holm_cap_uv": {"min": 10.0, "max": 500.0, "step": 5.0, "default": 70.0}}},
+      "window_max_gap_s": {"_read": true, "_value": 0.5},
+      "default": {"_read": true, "_value": {"epoch_s": 4.0, "fft": "hann", "reference": "hardware", "interpolation": "on", "ocular": "none"}},
+
+      "amplitude_bound": {
+        "_read": true,
+        "_note": "The band outside which a channel is UNUSUAL FOR THIS RUN. available=false is a REFUSAL. Fit it on your own run's amplitudes - a fixed range invented in advance is what this replaced. Read it as relative, never as a physiological standard.",
+        "_value": {
+          "available": true,
+          "low_uv": 7.91,
+          "high_uv": 62.76,
+          "partial_run": false,
+          "k": 3.0,
+          "median_uv": 22.27,
+          "sigma_log10": 0.14995,
+          "n_measurements": 120,
+          "n_recordings": 24,
+          "pct_outside": 10.0,
+          "method": "pooled across channels; log10; spread from (median - p25)/0.6745 so the upper tail cannot set its own threshold; +/- k sigma",
+          "basis": "this run's own channel amplitudes (relative, not absolute)"
+        }
+      },
+
+      "recordings": {
+        "_note": "One entry per SWEPT UNIT: every task, and every baseline SEGMENT separately.",
+        "<archive key>": {
+          "kind": {"_read": true, "_value": "task | baseline"},
+          "array_prefix": {"_read": true, "_example": "t01~task_agent_personal", "_note": "the archive key with '/' -> '~'"},
+          "segment": {"_read": true, "_example": null, "_note": "null for a task; the segment name for a baseline"},
+          "segment_bounds_s": {"_read": true, "_example": null},
+          "bad_channels": {"_read": true, "_example": ["F1", "F2"], "_note": "the detected list, for the badge"},
+          "interpolation_lists": {
+            "_read": true,
+            "_note": "Which channels each mode replaces. An entry for EVERY mode is required - the page describes what each one did from this map. Missing entries are a refusal.",
+            "_example": {"off": [], "on": ["F1", "F2"], "on_keepfrontal": [], "manual": ["F1", "F2"], "manual_keepfrontal": []}
+          },
+          "interpolation_tokens": {
+            "_read": true,
+            "_note": "mode -> stored-array token. The archive is keyed by WHICH CHANNELS were interpolated, not by mode name, so modes reaching the same list share one array. Token is '+'.join(channels in montage order), or '-' for none. Missing is a refusal. A task and its baseline segments MUST resolve to the same tokens.",
+            "_example": {"off": "-", "on": "F1+F2", "on_keepfrontal": "-", "manual": "F1+F2", "manual_keepfrontal": "-"}
+          },
+          "references_failed": {"_read": true, "_example": [], "_note": "a reference that could not be applied; its variants are absent and the page says so"},
+          "sigma": {"_read": true, "_note": "whole-recording robust SD per channel, per ocular mode", "_example": {"none": {"F1": 180.0, "F2": 210.0, "P3": 19.4, "P4": 20.1, "Pz": 21.4}}},
+          "amplitude_displayed": {
+            "_read": true,
+            "_note": "Amplitude of what is actually PLOTTED, keyed '<token>|<ocular>|<reference>'. One entry per distinct token x ocular x reference. The page shows this beside the as-recorded figure, because re-referencing smears one broken electrode across all ten.",
+            "_example": {"F1+F2|none|hardware": {"F1": 20.6, "F2": 20.6, "P3": 19.4, "P4": 20.1, "Pz": 21.4}}
+          },
+          "motion_available": {"_read": true, "_example": true},
+          "motion_unavailable_reason": {"_read": true, "_example": null, "_note": "a sentence, shown on the panel. A flat sensor is NO sensor, not a perfectly still head."},
+          "excluded_windows": {
+            "_read": true,
+            "_note": "Per epoch length, window indices whose samples are not contiguous in real time. Dropped under EVERY artifact mode including None - that mode means 'do not judge the EEG', not 'plot everything'. The field must be present; absent is a refusal.",
+            "_example": {"1": [], "2": [], "4": []}
+          },
+          "band_bins": {
+            "_read": true,
+            "_note": "Bins per band per '<epoch>|<estimator>'. A pure function of the sampling rate, so EVERY recording must report an identical table - differing tables mean something resampled, and the build refuses.",
+            "_example": {"4|hann": {"theta": 17, "alpha": 21, "alpha_holm": 17, "beta": 69, "freq_resolution_hz": 0.25, "smoothing_half_bandwidth_hz": 0.0}}
+          },
+          "n_windows": {"_read": true, "_example": {"1": 600, "4": 150, "10": 60}, "_note": "keys are '<epoch>' as %g"},
+          "times_s": {"_read": true, "_example": {"4": [0.0, 4.0, 8.0]}, "_note": "TASKS ONLY (null for a baseline). RECORDED window start times - never spread duration evenly over window indices, which put one real window four minutes wrong."},
+          "window_index": {"_read": true, "_example": null, "_note": "BASELINES ONLY (null for a task). A baseline ships no per-window times, so the page assumes a contiguous grid."},
+          "default_check": {"_read": true, "_example": [], "_note": "per-column deviations of the default cell from MNE's own estimator. NON-EMPTY IS A REFUSAL."},
+          "default_verified": {"_read": true, "_example": true, "_note": "false, or absent, IS A REFUSAL. An empty default_check with nothing compared is not a pass."},
+          "default_check_detail": {"_read": true, "_example": {"n_windows": 150, "n_columns": 7}}
+        }
+      },
+      "bytes_on_disk": {"_read": false},
+      "directory": {"_read": false, "_value": "variants"}
+    },
+
+    "outputs/variants/*_e<NN.N>.npz": {
+      "_filenames": [
+        "tasks_e04.0.npz     -> every TASK at the 4 s window length",
+        "baselines_e04.0.npz -> every BASELINE SEGMENT at 4 s",
+        "one pair per entry in epochs_s; the name format is f\"{'tasks'|'baselines'}_e{epoch:04.1f}.npz\""
+      ],
+      "_dtype": "float32. build_dashboard.py re-casts to little-endian '<f4' and base64s it straight into the page, so nothing is rounded on the way to the browser.",
+      "_array_names": {
+        "<prefix>::v::<token>|<ocular>|<reference>|<estimator>": {
+          "shape": "(n_windows, 7)",
+          "columns": "value_keys, in order",
+          "count": "distinct tokens x 3 ocular x 3 references x 4 estimators, per unit per epoch"
+        },
+        "<prefix>::p::<ocular>": {
+          "shape": "(n_windows, 5)",
+          "columns": "peak_channels, in order",
+          "meaning": "per-window peak amplitude in microvolts, what the Robust and Absolute cap sliders threshold",
+          "_note": "Measured on the PRE-INTERPOLATION signal in the hardware reference, whatever is displayed. A spline is smooth by construction and passes an amplitude threshold far more readily than a real electrode."
+        },
+        "<prefix>::s::<ocular>|<calibration length>": {
+          "shape": "(n_windows, 5)",
+          "columns": "peak_channels, in order",
+          "meaning": "per-window robust sigma from the N seconds CENTRED on each window, for the Windowed Robust mode",
+          "_note": "The one browser-side threshold that cannot be derived from what the page already has, which is why it is stored per offered length. Length is formatted %g: '10', '20', '30'."
+        },
+        "<prefix>::m::imu": {
+          "shape": "(n_windows, 3)",
+          "columns": "motion_columns, in order: accel_jerk, gyro, n_aux_samples",
+          "_note": "ONE matrix per unit per epoch - no ocular, reference or estimator dimension, because the IMU is a property of the recording rather than of a processing choice. OMIT the array entirely when there is no usable sensor; the page then counts those windows as unassessed rather than as clean."
+        }
+      },
+      "_missing_arrays": "An array the sweep did not produce is not an error. build_dashboard.py records it in a `missing` list and the page reports 'the pipeline never built this variant' rather than 'this recording has no windows here'. Those are different facts and readers act on them differently."
+    }
+  },
+
+  "_refusals": [
+    "run_meta.partial_run is true -> a filtered run must not produce a published dashboard",
+    "amplitude_bound.available is not true",
+    "baseline_segments or baseline_segment_order is empty",
+    "any recording is missing default_verified, or has it false",
+    "any recording has a non-empty default_check",
+    "robust_slide_choices_s is empty",
+    "ocular_modes differs from ['none','eog_regression','ica'] in value OR order",
+    "interpolation_modes differs from ['off','on','on_keepfrontal','manual','manual_keepfrontal'] in value OR order",
+    "any recording is missing interpolation_tokens",
+    "any recording's interpolation_lists lacks an entry for some mode",
+    "any recording is missing excluded_windows",
+    "run_meta.parameters.bad_channel_detection is not 'paired'",
+    "two recordings report different band_bins tables",
+    "a baseline's three segments were swept with different interpolation tokens",
+    "a task and its baseline resolve interpolation modes to different stored arrays"
+  ],
+
+  "_known_limitation": {
+    "dataset_specific_prose": "About 15 passages in build_dashboard.py's page template state findings from the Sarma Lab's own dataset as fact - 'positive on all 21 recordings with a working sensor', 'one 20-minute task recording', and similar. Those sentences will appear verbatim on a dashboard built from YOUR data, where they are not true. Grep build_dashboard.py for 'on this dataset', '21 recordings' and '20-minute' before publishing a build of your own."
+  }
+}
