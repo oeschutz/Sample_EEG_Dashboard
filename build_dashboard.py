@@ -939,6 +939,12 @@ def main() -> None:
 
 
 TEMPLATE = r"""<meta charset="utf-8">
+<!-- Without this a phone lays the page out at its default 980 px and then zooms
+     out to fit, so every control is rendered small rather than narrow and the
+     control banks really do swallow the screen. With it the layout gets the
+     real device width and the flex rows, auto-fill grids and text columns
+     below can reflow to it. -->
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Galea EEG Measures</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1085,11 +1091,36 @@ code{font-family:var(--mono);font-size:12.5px;background:var(--surface-2);
    settings dump: the toggles above are compact enough to be ambiguous, and the
    method notes at the foot of the page describe the method in general rather
    than what is on screen right now. */
-.plain{background:var(--surface);border:1px solid var(--rule);
-  border-left:3px solid var(--series);border-radius:8px;padding:16px 20px 14px;
+/* ---- collapsible disclosure panels ----------------------------------------
+   The plain-English readout and the warnings are both long, and both are
+   rebuilt on every control change. The <details> element therefore lives in the
+   STATIC skeleton and only its body is replaced, so the open/closed state
+   survives a re-render without having to be tracked in state and coerced. Both
+   default to closed: they are reference material, not the first thing to read.
+   -------------------------------------------------------------------------- */
+.disclose{border:1px solid var(--rule);border-radius:8px;background:var(--surface);
   margin-bottom:14px}
-.plain h2{font-size:12.5px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;
-  color:var(--ink-muted);font-family:var(--mono);margin-bottom:9px}
+.disclose.plain-wrap{border-left:3px solid var(--series)}
+.disclose.warn-wrap{border-left:3px solid var(--warning);background:var(--warning-bg)}
+.disclose > summary{list-style:none;cursor:pointer;padding:11px 16px;display:flex;
+  align-items:center;gap:8px;font-family:var(--mono);font-size:12px;font-weight:600;
+  letter-spacing:.04em;text-transform:uppercase;color:var(--ink-muted);
+  -webkit-user-select:none;user-select:none;border-radius:6px}
+.disclose > summary::-webkit-details-marker{display:none}
+.disclose > summary::marker{content:""}
+.disclose > summary:hover{color:var(--ink-2)}
+.disclose > summary:focus-visible{outline:2px solid var(--series);outline-offset:-2px}
+.caret{flex:none;width:7px;height:7px;border-right:2px solid currentColor;
+  border-bottom:2px solid currentColor;transform:rotate(-45deg);margin:0 4px 2px 1px;
+  transition:transform .13s}
+.disclose[open] > summary .caret{transform:rotate(45deg);margin-bottom:0}
+.disclose-n{margin-left:auto;font-family:var(--sans);font-size:11px;font-weight:600;
+  padding:1px 8px;border-radius:9px;letter-spacing:0;text-transform:none;
+  background:var(--surface-2);color:var(--ink-muted);border:1px solid var(--rule)}
+.warn-wrap .disclose-n{background:var(--surface);color:var(--warning-ink);
+  border-color:var(--warning)}
+
+.plain{padding:2px 20px 15px}
 .plain p{margin:0 0 9px;font-size:14px;color:var(--ink-2);max-width:88ch;line-height:1.62}
 .plain p:last-child{margin-bottom:0}
 .plain b{color:var(--ink);font-weight:600}
@@ -1098,9 +1129,8 @@ code{font-family:var(--mono);font-size:12.5px;background:var(--surface-2);
 .banner{border:1px solid var(--rule);border-left:3px solid var(--warning);
   background:var(--warning-bg);border-radius:8px;padding:12px 16px;margin-bottom:12px;
   font-size:13.5px;color:var(--ink)}
-.banner:last-of-type{margin-bottom:28px}
 .banner b{font-weight:600}
-.banners{margin-bottom:28px}
+.banners{padding:2px 16px 16px}
 .banners .banner:last-child{margin-bottom:0}
 
 .sec{display:flex;align-items:baseline;justify-content:space-between;gap:16px;
@@ -1207,10 +1237,25 @@ tbody tr:last-child td{border-bottom:0}
 tbody tr:hover{background:var(--surface-2)}
 .empty{padding:16px 20px;color:var(--ink-muted);font-size:13px}
 
+/* Multi-column rather than grid. As a grid these six blocks sat in rows, and a
+   row is as tall as its tallest member -- one 2,600 px column of prose stretched
+   its three neighbours to match and pushed the last two blocks a full screen
+   below the fold, which is the whitespace this replaces. Columns pack them by
+   height instead, so the section ends where its content ends. */
 .method{margin-top:34px;border-top:1px solid var(--rule);padding-top:22px;
-  display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:26px}
-.method h3{font-size:13px;font-weight:600;margin-bottom:7px}
-.method p{font-size:13px;color:var(--ink-2);margin:0 0 9px;max-width:60ch}
+  columns:4 260px;column-gap:26px}
+/* The blocks flow ACROSS column breaks rather than being kept whole. Keeping
+   them whole left one block setting the height of the whole section and a
+   fourth column standing empty -- and that block is a SINGLE 2,600 px
+   paragraph, so holding paragraphs together has the same effect as holding
+   blocks together. Both are therefore allowed to break, which is what a
+   multi-column text layout is for; `widows`/`orphans` keep a break from
+   stranding one line, and `break-after:avoid` keeps a heading with the text it
+   introduces. Reading order still runs down each column in turn. */
+.method > div{margin:0 0 22px}
+.method h3{font-size:13px;font-weight:600;margin-bottom:7px;break-after:avoid}
+.method p{font-size:13px;color:var(--ink-2);margin:0 0 9px;max-width:60ch;
+  widows:2;orphans:2}
 .tooltip{position:fixed;pointer-events:none;z-index:60;background:var(--surface);
   border:1px solid var(--rule-strong);border-radius:6px;box-shadow:var(--shadow);
   padding:7px 10px;font-family:var(--mono);font-size:11.5px;opacity:0;
@@ -1219,6 +1264,29 @@ tbody tr:hover{background:var(--surface-2)}
 .tooltip .tt-v{font-size:14px;font-weight:600;color:var(--ink)}
 .tooltip .tt-k{color:var(--ink-muted);font-size:10.5px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+
+/* ---- collapsing the control bank ------------------------------------------
+   The two banks run to ~350 px, and the bar is sticky, so on a laptop they hold
+   a third of the viewport permanently and on a phone rather more than that.
+   Collapsing leaves the one-line summary below, which is what the banks were
+   being read for most of the time anyway. */
+.ctl-bar-head{display:flex;align-items:center;gap:14px;min-width:0}
+.controls:not(.collapsed) .ctl-bar-head{margin-bottom:13px}
+.controls.collapsed .controls-inner{display:none}
+.ctl-toggle{display:inline-flex;align-items:center;gap:4px;flex:none;cursor:pointer;
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-muted);background:var(--surface-2);border:1px solid var(--rule);
+  border-radius:6px;padding:4px 10px 4px 8px}
+.ctl-toggle:hover{color:var(--ink-2);border-color:var(--rule-strong)}
+.ctl-toggle:focus-visible{outline:2px solid var(--series);outline-offset:2px}
+.ctl-toggle .caret{transform:rotate(45deg);margin:0 2px 2px 1px}
+.controls.collapsed .ctl-toggle .caret{transform:rotate(-45deg);margin-bottom:0}
+/* The summary is the only readout of what is applied while the banks are shut,
+   so it may shrink and ellipsize but must never wrap the bar onto a second line. */
+.ctl-summary{font-family:var(--mono);font-size:11.5px;color:var(--ink-muted);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.ctl-summary b{color:var(--ink-2);font-weight:600}
+.controls:not(.collapsed) .ctl-summary{display:none}
 
 /* ---- control rows: two banks, values above thresholds ---- */
 .controls-inner{flex-direction:column;align-items:stretch;gap:13px}
@@ -1253,15 +1321,30 @@ tbody tr:hover{background:var(--surface-2)}
   </div>
 </header>
 
-<div class="controls">
+<div class="controls" id="controls-bar">
+  <div class="ctl-bar-head">
+    <button type="button" class="ctl-toggle" id="ctl-toggle" aria-expanded="true"
+      aria-controls="controls"
+      title="Collapse the control banks to free up screen space. The settings stay applied.">
+      <span class="caret" aria-hidden="true"></span><span id="ctl-toggle-label">Controls</span>
+    </button>
+    <div class="ctl-summary" id="ctl-summary"></div>
+  </div>
   <div class="controls-inner" id="controls"></div>
 </div>
 
 <div id="tabpanel" role="tabpanel" aria-labelledby="tab-selected" tabindex="-1">
 <div id="shard-state" role="status" aria-live="polite" hidden></div>
-<div class="plain" id="plain"></div>
+<details class="disclose plain-wrap" id="plain-wrap">
+  <summary><span class="caret" aria-hidden="true"></span>What this page is showing right now</summary>
+  <div class="plain" id="plain"></div>
+</details>
 <div class="tiles" id="tiles"></div>
-<div class="banners" id="banners"></div>
+<details class="disclose warn-wrap" id="warn-wrap" hidden>
+  <summary><span class="caret" aria-hidden="true"></span>Warnings<span
+    class="disclose-n" id="warn-count"></span></summary>
+  <div class="banners" id="banners"></div>
+</details>
 <div id="detail-slot"></div>
 
 <div class="sec">
@@ -3657,8 +3740,10 @@ function renderPlain(){
     on very few surviving ${segShort()} windows. A clean task compared against a bad baseline gives
     a wrong answer that the corrected line alone will not reveal.`);
 
-  $("#plain").innerHTML = `<h2>What this page is showing right now</h2>
-    <p>${p1}</p><p>${p2}</p><p>${p3}</p><p>${p4}</p><p>${bits.join(" ")}</p>`;
+  /* No heading here: the <summary> of the surrounding <details> is the heading,
+     and repeating it inside would be read out twice. */
+  $("#plain").innerHTML =
+    `<p>${p1}</p><p>${p2}</p><p>${p3}</p><p>${p4}</p><p>${bits.join(" ")}</p>`;
 }
 
 function renderTiles(){
@@ -3943,6 +4028,11 @@ function renderTiles(){
     }
   }
   $("#banners").innerHTML = B.map(b=>`<div class="banner">${b}</div>`).join("");
+  /* The whole disclosure goes away when there is nothing to say, rather than
+     sitting there as an empty "Warnings" bar inviting a pointless click. The
+     count is on the summary so the bar is worth reading while shut. */
+  $("#warn-wrap").hidden = B.length === 0;
+  $("#warn-count").textContent = B.length;
 }
 
 function renderGrid(){
@@ -4691,12 +4781,16 @@ function render(){
   const want = focusKey();
   coerceState();
   FRAME = new Map();
-  renderHead(); renderControls();
+  renderHead(); renderControls(); renderControlSummary();
   const ready = ensureShard();
   renderShardState();
   if(!ready){
     for(const id of ["plain","tiles","banners","detail-slot","grid","table"])
       $("#"+id).innerHTML = "";
+    /* Emptying #banners is not enough: its disclosure is in the static skeleton,
+       so without this it would sit there as an open, empty "Warnings" bar for as
+       long as the shard takes to arrive. */
+    $("#warn-wrap").hidden = true;
     $("#excluded").innerHTML = ""; $("#excluded").hidden = true;
     $("#excluded-empty").hidden = false;
     $("#excluded-empty").textContent = "waiting for data";
@@ -4734,8 +4828,24 @@ document.addEventListener("click", e=>{
   }
   const p = e.target.closest(".panel");
   if(p){ st().open = st().open===p.dataset.key ? null : p.dataset.key; render();
-    document.querySelector(".detail")?.scrollIntoView({behavior:"smooth",block:"center"}); }
+    revealDetail(); }
 });
+
+/* Bring an expanded panel's TOP edge into view -- its title and chart -- rather
+   than its middle. `block:"start"` alone would put that edge underneath the
+   sticky control bar, so the margin is set from the bar's measured height at
+   scroll time: it changes with the viewport width, with which controls are
+   showing, and with whether the banks are collapsed. */
+function revealDetail(){
+  const d = document.querySelector(".detail");
+  if(!d) return;
+  const bar = document.querySelector(".controls");
+  d.style.scrollMarginTop = ((bar ? bar.getBoundingClientRect().height : 0) + 10) + "px";
+  /* The rest of the page drops its animations under prefers-reduced-motion, in
+     the media query at the end of the stylesheet, so this honours it too. */
+  const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  d.scrollIntoView({behavior: still ? "auto" : "smooth", block:"start"});
+}
 
 /* Sliders update their readout on every pixel of drag but only re-render on
    release: a full re-render at the 1 s window length redraws 22 charts of
@@ -4807,6 +4917,54 @@ document.addEventListener("keydown", e=>{
     document.querySelector(`.tabs button[data-tab="${tab}"]`)?.focus({preventScroll:true});
   }
 });
+
+/* =======================================================================
+   Collapsing the control banks.
+
+   Deliberately NOT part of `st()`: the banks are a property of the window, not
+   of the measure being looked at, so collapsing them on one tab and finding
+   them collapsed on the next is the behaviour that matches what was asked for.
+   It also means no re-render is needed to toggle -- the bar head is outside
+   everything render() rewrites, so a class on the wrapper is the whole job.
+   ======================================================================= */
+const CTL_BAR = $("#controls-bar");
+
+function setControlsCollapsed(on){
+  CTL_BAR.classList.toggle("collapsed", on);
+  $("#ctl-toggle").setAttribute("aria-expanded", String(!on));
+  $("#ctl-toggle-label").textContent = on ? "Show controls" : "Controls";
+  try{ localStorage.setItem("eeg-controls-collapsed", on ? "1" : "0"); }catch(_){}
+}
+
+$("#ctl-toggle").addEventListener("click", ()=>{
+  setControlsCollapsed(!CTL_BAR.classList.contains("collapsed"));
+});
+
+/* The one-line readout shown while the banks are shut. Only the settings that
+   change the NUMBERS are listed; the thresholds that merely re-colour windows
+   are left out to keep it to one line. Rebuilt on every render so it cannot
+   drift from the controls it stands in for. */
+function renderControlSummary(){
+  const lbl = (opts, id) => (opts.find(o=>o.id===id)||{}).label || id;
+  const bits = [
+    lbl(INT, st().interpSrc),
+    lbl(OC, st().oc),
+    lbl(REF, st().ref),
+    lbl(FFT, st().fft),
+    st().epoch + " s",
+    lbl(ART, st().art),
+    st().base === "off" ? "no baseline"
+      : `${lbl(baseOpts(), st().base)} vs ${segLabel(st().baseSeg)}`,
+  ];
+  $("#ctl-summary").innerHTML = bits.map(b=>`<b>${b}</b>`).join(" &middot; ");
+}
+
+/* Restore the collapsed state before the first paint so the bar does not flash
+   open. A browser with storage blocked simply starts expanded. */
+let ctlStart = false;
+try{ ctlStart = localStorage.getItem("eeg-controls-collapsed") === "1"; }catch(_){}
+setControlsCollapsed(ctlStart);
+
 render();
 </script>
 """
