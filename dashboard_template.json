@@ -155,6 +155,8 @@
       },
       "epochs_s": {"_read": true, "_value": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0], "_note": "one .npz pair per entry"},
       "fft_methods": {"_read": true, "_value": ["hann", "multitaper", "welch", "boxcar"]},
+      "multitaper_nw": {"_read": true, "_value": 4.0, "_note": "time-bandwidth product of the multitaper estimator. READ, and it changes what the page SAYS about every multitaper spectrum. If you omit it the dashboard silently assumes 4.0, so a different NW is mislabelled rather than refused -- emit it even if it matches the default."},
+      "multitaper_n_tapers": {"_read": false, "_value": 7, "_note": "written by the pipeline for provenance; the dashboard does not read it"},
       "references": {"_read": true, "_value": ["hardware", "average", "rest"]},
       "ocular_modes": {
         "_read": true,
@@ -168,8 +170,8 @@
       },
       "interpolation_sources": {"_read": true, "_value": ["off", "on", "manual"]},
       "interpolation_frontal_pair": {"_read": true, "_value": ["F1", "F2"]},
-      "manual_interpolation": {"_read": true, "_example": {"t01|agent": ["F1", "F2"]}, "_note": "keyed '<participant>|<arm>'; shown on the page as the hand-picked list"},
-      "default_interpolation_mode": {"_read": true, "_value": "on"},
+      "manual_interpolation": {"_read": true, "_example": {"t01|agent": ["F1", "F2"]}, "_note": "keyed '<participant>|<arm>', or '<participant>|<arm>_<framing>' where one arm covers two cells for that participant. Copied into the page for provenance, but the hand-picked list each recording actually gets is read from its own interpolation_lists.manual"},
+      "default_interpolation_mode": {"_read": false, "_value": "on", "_note": "written for provenance; the dashboard uses its own opening mode and never reads this"},
 
       "baseline_segments": {"_read": true, "_value": {"rest": [240.0, 360.0], "math": [0.0, 120.0], "eyes_closed": [225.0, 240.0]}},
       "baseline_segment_order": {"_read": true, "_value": ["rest", "math", "eyes_closed"]},
@@ -211,7 +213,7 @@
           "kind": {"_read": true, "_value": "task | baseline"},
           "array_prefix": {"_read": true, "_example": "t01~task_agent_personal", "_note": "the archive key with '/' -> '~'"},
           "segment": {"_read": true, "_example": null, "_note": "null for a task; the segment name for a baseline"},
-          "segment_bounds_s": {"_read": true, "_example": null},
+          "segment_bounds_s": {"_read": false, "_example": null, "_note": "the page builds its own bounds from the top-level baseline_segments; this per-recording copy is not read"},
           "bad_channels": {"_read": true, "_example": ["F1", "F2"], "_note": "the detected list, for the badge"},
           "interpolation_lists": {
             "_read": true,
@@ -247,7 +249,7 @@
           "window_index": {"_read": true, "_example": null, "_note": "BASELINES ONLY (null for a task). A baseline ships no per-window times, so the page assumes a contiguous grid."},
           "default_check": {"_read": true, "_example": [], "_note": "per-column deviations of the default cell from MNE's own estimator. NON-EMPTY IS A REFUSAL."},
           "default_verified": {"_read": true, "_example": true, "_note": "false, or absent, IS A REFUSAL. An empty default_check with nothing compared is not a pass."},
-          "default_check_detail": {"_read": true, "_example": {"n_windows": 150, "n_columns": 7}}
+          "default_check_detail": {"_read": false, "_example": {"n_windows": 150, "n_columns": 7}, "_note": "provenance for the MNE reproduction check; not read"}
         }
       },
       "bytes_on_disk": {"_read": false},

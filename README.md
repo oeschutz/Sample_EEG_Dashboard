@@ -109,7 +109,7 @@ Line numbers below point into the copies of `pipeline.py` and
 run was made with:
 
 ```
-Python 3.13.7, MNE 1.11.0, NumPy 2.3.3, SciPy 1.16.2, pandas, matplotlib
+Python 3.13.7, MNE 1.11.0, NumPy 2.3.3, SciPy 1.16.2, pandas
 ```
 
 There is no lock file, and **specify the MNE version**. Its spectral defaults
@@ -125,19 +125,19 @@ is excluded, and the manual interpolation modes interpolate nothing.
 
 | Constant | Line | What it is for |
 |---|---|---|
-| `MANUAL_INTERPOLATION` | `pipeline.py:653` | Hand-picked channels to interpolate, per `(participant, arm)`. Feeds the `manual` and `manual_keepfrontal` interpolation modes; while it is empty those two resolve to the same arrays as `off`. |
-| `EXCLUDED_RECORDINGS` | `pipeline.py:972` | Named recordings to drop, keeping the rest of that participant. Name both halves of a pair. |
-| `EXCLUDED_PARTICIPANTS` | `pipeline.py:963` | Participants to drop entirely, with `EXCLUDED_PARTICIPANT_REASONS` at `:964` for the reason the dashboard prints. |
+| `MANUAL_INTERPOLATION` | `pipeline.py:655` | Hand-picked channels to interpolate, keyed `(participant, arm)` — or `(participant, "<arm>_<framing>")` where that participant ran the same arm under both framings, since one entry cannot speak for two cells. Feeds the `manual` and `manual_keepfrontal` modes; while it is empty those two resolve to the same arrays as `off`. |
+| `EXCLUDED_RECORDINGS` | `pipeline.py:994` | Named recordings to drop, keeping the rest of that participant. Name both halves of a pair. |
+| `EXCLUDED_PARTICIPANTS` | `pipeline.py:985` | Participants to drop entirely, with `EXCLUDED_PARTICIPANT_REASONS` at `:986` for the reason the dashboard prints. |
 
 Fill them in and the validators become strict, which is the point of them:
 
-- `assert_manual_interpolation()` (`pipeline.py:778`) exits on an entry that
+- `assert_manual_interpolation()` (`pipeline.py:790`) exits on an entry that
   matches no discovered recording, names an unknown channel, repeats one, would
   interpolate every channel, or is keyed by an arm that matches two pairs. A
   typo would otherwise interpolate nothing and ship as a result rather than as
   an error — an absent group legitimately means "interpolate nothing here", so a
   miss is indistinguishable from an instruction.
-- `assert_excluded_recordings()` (`pipeline.py:983`) exits on a key naming no
+- `assert_excluded_recordings()` (`pipeline.py:1005`) exits on a key naming no
   real recording, and on a pair excluded from one side only. The surviving half
   would otherwise be swept and baseline-corrected against a partner that no
   longer exists.
@@ -148,7 +148,7 @@ mistake costs you a second rather than forty minutes.
 ### The data it expects
 
 A folder called `EEG Recordings/` beside `pipeline.py`. Discovery is a single
-glob in `discover_recordings()` (`pipeline.py:1138`):
+glob in `discover_recordings()` (`pipeline.py:1160`):
 
 ```
 EEG Recordings/*/*/openbci-raw-exg_*.txt
@@ -193,24 +193,23 @@ lines, then a CSV. The columns that are read by name:
 | Column | Used for |
 |---|---|
 | `Timestamp` | float seconds. Every window time comes from these, never from an assumed grid |
-| `Timestamp (Formatted)` | only by the p02 interval excision |
-| `Marker` | segmentation; the value looked for is `8.0` (`TASK_MARKER`, `pipeline.py:944`) |
+| `Marker` | segmentation; the value looked for is `8.0` (`TASK_MARKER`, `pipeline.py:966`) |
 
 Channels are taken **positionally**, from columns 1–18, in this order
-(`pipeline.py:105`):
+(`pipeline.py:107`):
 
 ```
 1-4   EMG        5-6  EOG        7-8  EMG        9-18  EEG
 ```
 
 Of those, the ten EEG columns are picked by having `EEG` in the column name, and
-are renamed to the montage (`pipeline.py:578`):
+are renamed to the montage (`pipeline.py:580`):
 
 ```
 F1 F2 C3 C4 P3 P4 O1 O2 Cz Pz
 ```
 
-`assert_montage_names()` (`pipeline.py:760`) compares that list against what MNE
+`assert_montage_names()` (`pipeline.py:772`) compares that list against what MNE
 actually holds and raises `SystemExit` on a mismatch, because the manual
 interpolation lists and the frontal-pair rule are written in terms of those
 names. Sampling rate is 250 Hz, hardware reference SRB2 / earlobe.
@@ -248,7 +247,7 @@ column.
 - A **baseline** is a 360 s block (`BASELINE_BLOCK_SEC`) structured as 0–2 min
   mental arithmetic, 2–4 min deliberate eye movements, 4–6 min rest. Three
   segments of it are swept, and the dashboard chooses between them
-  (`BASELINE_SEGMENTS`, `pipeline.py:915`):
+  (`BASELINE_SEGMENTS`, `pipeline.py:937`):
 
   | Segment | Bounds | What it is |
   |---|---|---|
@@ -261,14 +260,14 @@ column.
   every baseline-corrected number on the page is wrong. Change the bounds rather
   than living with them.
 
-Two marker cases to know about, both in `step2_segment()` (`pipeline.py:1218`):
+Two marker cases to know about, both in `step2_segment()` (`pipeline.py:1253`):
 
 - **One marker** is repaired rather than dropped, if the recording runs a full
   block past it: the block becomes `marker → marker + 1200 s` for a task, or
   `+ 360 s` for a baseline. Otherwise the recording is dropped with
   `cannot delimit the segment`.
 - **Three or more markers** fall through to `else: a, b = mi[0], mi[1]`
-  (`pipeline.py:1253`) and **the extras are ignored**. This template assumes your
+  (`pipeline.py:1287`) and **the extras are ignored**. This template assumes your
   recordings carry no false starts or double presses; the original study's
   per-recording repairs for those have been removed. It is not silent — a
   segment that comes out well short of 20 minutes is recorded `clean: false`
@@ -283,15 +282,15 @@ records them. Three functions read it:
 
 | Function | Where | What it returns |
 |---|---|---|
-| `recording_arm()` | `pipeline.py:656` | `agent` / `ai` / `none`, from `^(?:task\|baseline)_(agent\|ai\|none)_`. **Raises `ValueError`** on anything else rather than guessing |
-| `recording_condition()` | `pipeline.py:675` | `<arm>_<framing>`, e.g. `none_personal`. Strips a trailing `_1` / `_2` file-split suffix |
-| `baseline_key_for_task()` | `pipeline.py:5149` | the paired baseline: `task_agent_personal` → `<pid>/baseline_agent_personal` |
+| `recording_arm()` | `pipeline.py:658` | `agent` / `ai` / `none`, from `^(?:task\|baseline)_(agent\|ai\|none)_`. **Raises `ValueError`** on anything else rather than guessing |
+| `recording_condition()` | `pipeline.py:686` | `<arm>_<framing>`, e.g. `none_personal`. Strips a trailing `_1` / `_2` file-split suffix |
+| `baseline_key_for_task()` | `pipeline.py:5188` | the paired baseline: `task_agent_personal` → `<pid>/baseline_agent_personal` |
 
 and one more decides what the page says:
 
 | Function | Where | What it returns |
 |---|---|---|
-| `condition_label()` | `build_dashboard.py:163` | the display labels — Agent / AI / No AI, Personal / Speedscore |
+| `condition_label()` | `build_dashboard.py:162` | the display labels — Agent / AI / No AI, Personal / Speedscore |
 
 Note the asymmetry between the last two: `recording_arm()` raises on a name
 it cannot parse, but `condition_label()` falls back — anything without
@@ -359,18 +358,18 @@ outputs/qc_steps.json    per-channel amplitudes, bad-channel z-scores, step note
 Expect a much larger deliverable than the synthetic one. At 22 tasks and 22
 baselines it is `dashboard.html` at 32.1 MB plus `dashboard_data/` at 333 MB —
 **365 MB**, against 62 MB for the synthetic tree. `build_dashboard.py` prints the
-total and warns above 100 MB; on a dataset that size the warning always fires.
+total and prints a `NOTE:` above 100 MB; on a dataset that size it always fires.
 
 ### Smoke tests, and the trap in them
 
 ```bash
-python pipeline.py --only p09/task
+python pipeline.py --only p02/task
 python pipeline.py --limit 2
 ```
 
 A filtered run marks `run_meta.partial_run` and diverts everything it writes, so
 it cannot clobber a complete run: the JSON and QC files go to `outputs/partial/`
-and the sweep to `outputs/variants_partial/` (`pipeline.py:4532`, `:4904`).
+and the sweep to `outputs/variants_partial/` (`pipeline.py:4571`, `:4943`).
 `build_dashboard.py` **refuses to build from it**. That refusal is deliberate — a
 filtered run also fits the amplitude band on whatever it processed, and stamps
 `partial_run: true` inside `amplitude_bound` so the flag travels with the number
@@ -422,15 +421,25 @@ rather than across anything an electrode measured.
 
 ## Two things to fix before you publish a build of your own
 
-**The page states our findings as fact.** About 15 passages in
-`build_dashboard.py`'s template are claims about the Sarma Lab's dataset —
-*"positive on all 21 recordings with a working sensor"*, *"one 20-minute task
-recording"*, and similar. They render verbatim on a dashboard built from your
-data, where they are not true. Grep for `this dataset` (12 hits), `recordings`
-next to a number, and `20-minute`.
+**The page still quotes the original study's numbers.** The worst of these are
+gone: nothing now asserts a recording count or a task length that the loaded
+data contradicts, and the two places that said *"one 20-minute task recording"*
+derive the length from your own recordings instead (`TASK_LEN` in
+`build_dashboard.py`). What remains is the **Head motion** methods panel, which
+is a page of measured figures — rank correlations, rejection rates, how much
+theta the top decile of movement carries. They are kept because they are the
+argument for offering those controls at all, and the panel now says in its own
+first lines that they come from that study rather than from your data. Read
+them, decide whether you want to re-measure them on yours, and edit the panel
+if you would rather not publish someone else's numbers.
+
+The phrase `this dataset` appears 11 times in `build_dashboard.py`. Most are
+correct in any build — the amplitude band genuinely *is* derived from whatever
+tree is loaded — so do not blanket-replace them. The ones to check are those
+sitting next to a specific measured number.
 
 **The arm and framing come from the recording name**, on both routes.
-`condition_label()` at `build_dashboard.py:163` parses `_agent_` / `_ai_` /
+`condition_label()` at `build_dashboard.py:162` parses `_agent_` / `_ai_` /
 `_none_` and `personal` / `speedscore` out of the folder name. Rename your
 recordings to match, or edit that function — see *Naming conventions* under
 Route 2.

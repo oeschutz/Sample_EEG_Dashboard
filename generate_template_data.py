@@ -85,7 +85,7 @@ MULTITAPER_NW = 4.0
 MULTITAPER_N_TAPERS = 7
 
 # Bands, in Hz. `alpha_holm` is Holm's 8-12; `alpha` is the example pipeline's
-# 8-13. They are deliberately different quantities -- see PROVENANCE.md 7.2.
+# 8-13. They are deliberately different quantities, not a typo.
 BANDS = {"theta": (4.0, 8.0), "alpha": (8.0, 13.0),
          "alpha_holm": (8.0, 12.0), "beta": (13.0, 30.0)}
 
@@ -101,7 +101,7 @@ AMPLITUDE_BOUND_MIN_N = 100
 # recorded in the same session.
 #
 # `bad` is the channel list bad-channel detection returns for that PAIR (the
-# task and its baseline share one list -- PROVENANCE.md 2.3). `manual` is the
+# task and its baseline share one list). `manual` is the
 # hand-picked list, which may disagree with `bad` in either direction; that
 # disagreement is the point of shipping both.
 # ---------------------------------------------------------------------------
@@ -187,6 +187,32 @@ def interpolation_lists(detected, manual) -> dict:
         "manual": list(manual),
         "manual_keepfrontal": drop_frontal_pair(manual),
     }
+
+
+def manual_interpolation_map() -> dict:
+    """The sweep manifest's record of which channels were hand-picked, per group.
+
+    Keyed `<participant>|<arm>` where that arm names exactly ONE cell for the
+    participant, and `<participant>|<arm>_<framing>` where it names two. That
+    distinction is not cosmetic: pipeline.py keys the same table by arm and
+    falls back to the finer condition key, and its assert_manual_interpolation()
+    REFUSES to start when an arm key would match two task/baseline pairs,
+    because one entry cannot say two different things. t03 runs `none` under
+    both framings, so an arm key for it is exactly that refusable shape -- and
+    this tree is meant to be a known-good example to diff an exporter against,
+    not one that would be rejected if it were fed back in.
+    """
+    seen = {}
+    for c in CELLS:
+        seen.setdefault((c["participant"], c["arm"]), []).append(c)
+    out = {}
+    for (participant, arm), cells in seen.items():
+        for c in cells:
+            if not c["manual"]:
+                continue
+            key = arm if len(cells) == 1 else f"{arm}_{c['framing']}"
+            out[f"{participant}|{key}"] = list(c["manual"])
+    return out
 
 
 def band_bin_table() -> dict:
@@ -820,9 +846,7 @@ def main() -> None:
         "interpolation_sources": INTERPOLATION_SOURCES,
         "interpolation_frontal_pair": FRONTAL_PAIR,
         "default_interpolation_mode": "on",
-        "manual_interpolation": {
-            f"{c['participant']}|{c['arm']}": list(c["manual"])
-            for c in CELLS if c["manual"]},
+        "manual_interpolation": manual_interpolation_map(),
         "ocular_modes": OCULAR_MODES,
         "default": {"epoch_s": 4.0, "fft": "hann", "reference": "hardware",
                     "interpolation": "on", "ocular": "none"},

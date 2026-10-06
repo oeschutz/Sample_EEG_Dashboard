@@ -2,8 +2,7 @@
 Builds dashboard.html (plus dashboard_data/) from outputs/cognitive_load.json,
 outputs/baselines.json and outputs/variants/.
 
-Run pipeline.py first. See PROVENANCE.md for every analysis decision, and
-CODE_REVIEW.md / CODE_REVIEW_2026-08-28.md / CODE_REVIEW_2026-09-01.md for the
+Run pipeline.py first. Analysis decisions are recorded inline there, beside the
 reviews that prompted the 2026-08-27, 2026-08-28 and 2026-09-01 revisions.
 
 2026-08-28: five tabs instead of one. The Holm cognitive-load index keeps the
@@ -1034,8 +1033,14 @@ code{font-family:var(--mono);font-size:12.5px;background:var(--surface-2);
 .ctl{display:flex;flex-direction:column;gap:6px}
 .ctl-label{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;
   text-transform:uppercase;color:var(--ink-muted)}
-.seg{display:flex;background:var(--surface-2);border:1px solid var(--rule);
-  border-radius:7px;padding:2px;gap:2px}
+/* `flex-wrap:wrap` is load-bearing, not cosmetic. The buttons are
+   `white-space:nowrap`, so without it the widest group -- Artifact rejection,
+   seven buttons, 712 px -- cannot shrink below its content and forces the whole
+   page wider than a phone screen. The page has a `width=device-width` viewport,
+   so that overflow becomes a sideways pan rather than a zoomed-out page, and
+   `.controls` is sticky vertically only, so the control bar pans away with it. */
+.seg{display:flex;flex-wrap:wrap;background:var(--surface-2);
+  border:1px solid var(--rule);border-radius:7px;padding:2px;gap:2px}
 .seg button{font-family:var(--sans);font-size:13px;font-weight:500;color:var(--ink-2);
   background:none;border:0;padding:6px 13px;border-radius:5px;cursor:pointer;
   white-space:nowrap;transition:background .12s,color .12s}
@@ -1303,6 +1308,30 @@ tbody tr:hover{background:var(--surface-2)}
    with the other control styles above. */
 .ctl.off{opacity:.5}
 #shard-state:not([hidden]){margin-bottom:26px}
+
+/* ---- small screens ---------------------------------------------------------
+   The stylesheet had no width media query at all. That was survivable while the
+   page had no viewport meta and a phone simply rendered it at 980 px and zoomed
+   out; with `width=device-width` the layout gets a real 375 px and needs to
+   answer for it. Nothing here changes the desktop rendering.
+   -------------------------------------------------------------------------- */
+@media (max-width:760px){
+  .wrap{padding-left:16px;padding-right:16px}
+  /* A wrapped control bank is a lot of rows, so tighten the pieces that repeat. */
+  .ctl-row{gap:14px}
+  .ctl-row + .ctl-row{padding-top:11px}
+  .controls-inner{gap:11px}
+  .seg button{padding:6px 10px;font-size:12.5px}
+  .slider input[type=range]{width:104px}
+  .slider .val{min-width:48px}
+  /* One trace per row reads better than two cramped ones. */
+  .grid{grid-template-columns:1fr}
+  .d-head{padding:13px 15px}
+  .d-meta{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+  .plain{padding:2px 15px 14px}
+  .banners{padding:2px 12px 13px}
+  .method{column-gap:0}
+}
 </style>
 
 <div class="wrap">
@@ -1412,11 +1441,12 @@ const MOT_LABEL = {accel_jerk:"Accelerometer", gyro:"Gyroscope", union:"Either"}
 /* A THIRD rule, not a third sensor channel: reject a window if EITHER source
    would reject it, each against its own per-recording threshold. It is offered
    because the two disagree far more than their +0.84 rank correlation suggests
-   -- at the k=3 default they share only 129 of the 418 windows either one
-   rejects (Jaccard 0.31) -- so "which sensor" is a real analysis choice rather
-   than a formality, and the union is the sensitive end of it. (Figures
-   re-measured 2026-09-08 on the 19 analysed task recordings with usable motion;
-   they were 132 of 437 over 21 recordings before two were excluded.)
+   -- at the k=3 default they shared only 129 of the 418 windows either one
+   rejected (Jaccard 0.31) -- so "which sensor" is a real analysis choice rather
+   than a formality, and the union is the sensitive end of it. (Those figures
+   come from the study this code was written for, measured over its 19 task
+   recordings with usable motion. Expect different numbers on another dataset;
+   the argument for offering the union does not depend on them.)
 
    It lives here rather than in MOTION_SOURCES because MOTION_SOURCES names the
    COLUMNS the pipeline ships in the motion matrix, and there is no union column:
@@ -1688,6 +1718,24 @@ const INT = [{id:"off",label:"Off"},
    trap is documented on OC above. */
 const FRONTAL = (DATA.frontal_pair && DATA.frontal_pair.length)
               ? DATA.frontal_pair : ["F1","F2"];
+
+/* "one 20-minute task recording" used to be written into two places on the
+   page. It described the study this code was written for, and it rendered
+   verbatim over whatever tree the page was actually built from -- six 10-minute
+   recordings, in the template's own example build. Derived instead, and only
+   when the recordings agree on a length: a tree with mixed durations gets the
+   plain phrase rather than a median that describes none of them. Trailing space
+   is part of the value so the callers read `${TASK_LEN}task`. */
+const TASK_LEN = (()=>{
+  const d = DATA.recordings.map(r=>r.duration_s)
+                           .filter(v=>typeof v === "number" && v > 0)
+                           .sort((a,b)=>a-b);
+  if(!d.length) return "";
+  const lo = d[0], hi = d[d.length-1], med = d[(d.length-1)>>1];
+  if(hi > lo * 1.25) return "";
+  const mins = med / 60;
+  return `${mins >= 2 ? Math.round(mins) : +mins.toFixed(1)}-minute `;
+})();
 /* Did the frontal-pair checkbox actually bite on this recording? The question is
    about the SOURCE list the mode started from -- the automatic list under
    `automatic`, the manual one under `manual` -- not about what detection found.
@@ -2792,8 +2840,11 @@ function renderHead(){
   $("#mast-title").textContent = m.title;
   $("#mast-formula").innerHTML = m.formula +
     ` <span>&middot; ${st().epoch}&nbsp;s windows &middot; ${FFT_LABEL[st().fft]} taper</span>`;
-  $("#mast-lede").innerHTML = m.lede +
-    ` Decisions are recorded in <code>PROVENANCE.md</code>.`;
+  /* No pointer to an analysis-decisions file here. This page is built from
+     whatever tree it is given, and the document that recorded those decisions
+     for the original study does not travel with this template -- naming it put
+     a dead reference in the masthead of every build. */
+  $("#mast-lede").innerHTML = m.lede;
   $("#mast-eyebrow").textContent =
     `OpenBCI Galea · ${DATA.n_participants} participants · ${DATA.recordings.length} task recordings`;
   $("#tabs").innerHTML = ORDER.map(id=>
@@ -3224,9 +3275,10 @@ function plainArtifact(){
       <b>But it is not finding anything the amplitude rules miss.</b> Of the windows in the top
       tenth of movement, an average of only <b>1% survive <em>Robust</em></b> at its default
       5&nbsp;&sigma; &mdash; the two rules are largely selecting the same windows. Movement also
-      predicts the largest voltage excursion in a window <em>well</em> (rank correlation +0.67
-      median, positive on all 21 recordings with a working sensor), which is the same fact seen
-      from the other side.
+      predicts the largest voltage excursion in a window <em>well</em> &mdash; in the study
+      this page's code was written for, a median rank correlation of +0.67, positive on every
+      recording with a working sensor. Those are that dataset's figures, not this one's.
+      It is the same fact seen from the other side.
       <b>The reason to use it is independence.</b> Every other rule thresholds the EEG whose
       spectrum is then plotted, so a window is judged by the same data it contributes; the motion
       sensor is separate evidence about the same moment. Rejection modes are exclusive here, so
@@ -3393,7 +3445,7 @@ function plainOcular(){
    It was written into the OFF branch behind a `st().interp==="on"` guard, so it
    could never render: the branch only runs when interpolation is off, and the
    guard only passes when it is on. It shipped in dashboard.html as unreachable
-   text -- present in the file, invisible on the page -- and PROVENANCE.md
+   text -- present in the file, invisible on the page -- while the notes
    claimed it was surfaced. Caught by review 2026-09-08. */
 function plainInterp(){
   /* The frontal-pair sentence is written once and appended to both the automatic
@@ -3648,7 +3700,7 @@ function renderPlain(){
     a.m+=k.measured; a.t+=k.total; a.e+=(s && s.eligible!=null) ? s.eligible : k.total;
     return a;},{m:0,t:0,e:0});
 
-  const p1 = `Each small chart below is <b>one 20-minute task recording</b>. The recording
+  const p1 = `Each small chart below is <b>one ${TASK_LEN}task recording</b>. The recording
     is chopped into ${st().epoch}-second windows, and every point on the chart is one of those
     windows. How high the point sits is ${PLAIN_MEASURE[tab]}.`;
 
@@ -3744,6 +3796,7 @@ function renderPlain(){
      and repeating it inside would be read out twice. */
   $("#plain").innerHTML =
     `<p>${p1}</p><p>${p2}</p><p>${p3}</p><p>${p4}</p><p>${bits.join(" ")}</p>`;
+  $("#plain-wrap").hidden = false;   /* undoes the hide in render()'s not-ready branch */
 }
 
 function renderTiles(){
@@ -4044,7 +4097,7 @@ function renderGrid(){
      otherwise the page shows "20 recordings shown" above 22 panels. */
   const blank = recs.filter(r=>{const s=frame(r); return !s || s.noBaseline;}).length;
   $("#grid-hint").textContent =
-    "Each panel is one 20-minute task. Select a panel for the full trace, the electrode amplitudes behind it, and its signal-quality readout."
+    `Each panel is one ${TASK_LEN}task. Select a panel for the full trace, the electrode amplitudes behind it, and its signal-quality readout.`
     + (blank ? `  ${blank} of the ${recs.length} panels ${blank===1?"is":"are"} empty: `
              + `${blank===1?"that recording has":"those recordings have"} no usable `
              + `${segShort()} baseline, and each says so in its footer.` : "");
@@ -4548,9 +4601,9 @@ function renderMethod(){
     dense grid over all five modes would have needed
     ${(DATA.n_dense_arrays||0).toLocaleString()}. Nothing is approximated by this: two modes
     share an array only when they are, channel for channel, the same instruction.</p>
-    <p><strong>The manual list is a judgement, not a measurement.</strong> It was written
-    down per participant and arm and has no derivation here; it is recorded as a decision in
-    <code>PROVENANCE.md</code>. Where it is empty for a recording &mdash; which it is for
+    <p><strong>The manual list is a judgement, not a measurement.</strong> It is written
+    down per participant and arm, by hand, and nothing in the pipeline derives it or can
+    check it against the data. Where it is empty for a recording &mdash; which it is for
     most &mdash; the manual mode interpolates nothing at all, and that is an instruction
     rather than a gap.</p></div>
   <div><h3>Baseline correction</h3>
@@ -4614,17 +4667,22 @@ function renderMethod(){
     change of the acceleration vector (the accelerometer is dominated by gravity, so its
     <em>movement</em> is the informative part, not its magnitude); the <strong>gyroscope</strong>,
     as rotation rate; and <strong>Either</strong>, which rejects a window that either stream flags,
-    each against its own threshold. The two streams agree less than they look like they should
+    each against its own threshold.
+    <em>Every figure in the rest of this panel was measured on the study this page&rsquo;s code was
+    written for, not on the recordings currently loaded. They are kept because they are the
+    evidence for offering these three choices at all; read them as that study&rsquo;s results, and
+    expect your own to differ.</em>
+    The two streams agree less than they look like they should
     &mdash; their values correlate +0.84 within a recording, but at the 3&nbsp;&sigma; default they
     share only 129 of the 418 windows one or other rejects. The accelerometer is the better single
-    detector on this dataset: against each recording&rsquo;s own per-window peak amplitude it
+    detector on <em>that</em> dataset: against each recording&rsquo;s own per-window peak amplitude it
     scores &rho; +0.68 to the gyroscope&rsquo;s +0.61, wins in 17 of the 19 recordings that have
     usable motion, and at a matched rejection budget catches about twice as much of each
     recording&rsquo;s loudest tail. <strong>Either</strong> is nonetheless what this page opens on,
     being the sensitive setting: it costs 7.3% of windows against the accelerometer&rsquo;s 5.5%
     and the gyroscope&rsquo;s 4.1%, and picks up what the gyroscope alone would have found. The
     magnetometer is not offered &mdash; it is heavily quantised and measures heading against an
-    external field, and it was not evaluated here. Measured on this dataset, windows in the top
+    external field, and it was not evaluated here. Measured on <em>that</em> dataset, windows in the top
     decile of movement carry about 5.2&times; the frontal theta and 2.7&times; the parietal alpha of
     the remainder, and at the default 3&nbsp;&sigma; the rule removes about 5% of windows carrying
     several times the frontal theta of those kept (a median of per-recording ratios, 6&ndash;8&times;
@@ -4787,10 +4845,12 @@ function render(){
   if(!ready){
     for(const id of ["plain","tiles","banners","detail-slot","grid","table"])
       $("#"+id).innerHTML = "";
-    /* Emptying #banners is not enough: its disclosure is in the static skeleton,
-       so without this it would sit there as an open, empty "Warnings" bar for as
-       long as the shard takes to arrive. */
+    /* Emptying #banners and #plain is not enough: both disclosures are in the
+       static skeleton, so without this they sit there as open, empty, headed
+       boxes for as long as the shard takes to arrive -- or permanently, on a
+       file:// origin whose dashboard_data/ folder was not copied along. */
     $("#warn-wrap").hidden = true;
+    $("#plain-wrap").hidden = true;
     $("#excluded").innerHTML = ""; $("#excluded").hidden = true;
     $("#excluded-empty").hidden = false;
     $("#excluded-empty").textContent = "waiting for data";
@@ -4840,7 +4900,13 @@ function revealDetail(){
   const d = document.querySelector(".detail");
   if(!d) return;
   const bar = document.querySelector(".controls");
-  d.style.scrollMarginTop = ((bar ? bar.getBoundingClientRect().height : 0) + 10) + "px";
+  const barH = bar ? bar.getBoundingClientRect().height : 0;
+  /* Clamped, because the bar can be taller than the window -- an expanded bank
+     on a phone, or any short desktop window. Unclamped, the margin pushes the
+     panel past the bottom of the viewport and a reader who taps a panel is left
+     looking at the control bar with their chart somewhere below the fold. At
+     ordinary desktop sizes the clamp never binds. */
+  d.style.scrollMarginTop = Math.min(barH + 10, innerHeight * 0.45) + "px";
   /* The rest of the page drops its animations under prefers-reduced-motion, in
      the media query at the end of the stylesheet, so this honours it too. */
   const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -4891,6 +4957,11 @@ document.addEventListener("keydown", e=>{
      /* The export button keeps focus after a click; arrowing from it used to
         cycle the baseline segment and yank focus to the segment control. */
      && e.target.id !== "export-btn"
+     /* Same for the two disclosure headings. They are focusable in their own
+        right, and a keyboard reader who has tabbed to "Warnings" and presses
+        an arrow means to move within the page, not to re-cut the baseline of
+        a panel further down it. */
+     && e.target.tagName !== "SUMMARY"
      && !/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName||"")
      && !e.target.isContentEditable){
     /* `$(".d-base")` rather than st().open alone: renderDetail bails out when the
@@ -4933,6 +5004,11 @@ function setControlsCollapsed(on){
   CTL_BAR.classList.toggle("collapsed", on);
   $("#ctl-toggle").setAttribute("aria-expanded", String(!on));
   $("#ctl-toggle-label").textContent = on ? "Show controls" : "Controls";
+  /* The tooltip has to move with the label, or a collapsed bar reads
+     "Show controls" and then offers to collapse itself on hover. */
+  $("#ctl-toggle").title = on
+    ? "Show the control banks. The settings below are applied either way."
+    : "Collapse the control banks to free up screen space. The settings stay applied.";
   try{ localStorage.setItem("eeg-controls-collapsed", on ? "1" : "0"); }catch(_){}
 }
 
@@ -4947,7 +5023,14 @@ $("#ctl-toggle").addEventListener("click", ()=>{
 function renderControlSummary(){
   const lbl = (opts, id) => (opts.find(o=>o.id===id)||{}).label || id;
   const bits = [
-    lbl(INT, st().interpSrc),
+    /* interpSrc alone does NOT name the mode: it and the frontal-pair checkbox
+       together select one of five swept interpolation modes, so two different
+       stored arrays would otherwise print the same summary line. Only mentioned
+       when it can bite -- with interpolation off there is nothing to hold back,
+       and the checkbox is a no-op unless BOTH frontal channels are on the list. */
+    lbl(INT, st().interpSrc) +
+      (st().interpSrc !== "off" && !st().frontalPair
+        ? ` (${FRONTAL.join("+")} held back)` : ""),
     lbl(OC, st().oc),
     lbl(REF, st().ref),
     lbl(FFT, st().fft),
@@ -4960,9 +5043,16 @@ function renderControlSummary(){
 }
 
 /* Restore the collapsed state before the first paint so the bar does not flash
-   open. A browser with storage blocked simply starts expanded. */
-let ctlStart = false;
-try{ ctlStart = localStorage.getItem("eeg-controls-collapsed") === "1"; }catch(_){}
+   open. Default COLLAPSED on a narrow screen, where an expanded bank is taller
+   than the whole viewport and a first-time visitor would otherwise have to
+   scroll past it to reach any content -- which is the case the collapse exists
+   for. A stored choice always wins over the default, and a browser with storage
+   blocked just gets the width-based default. */
+let ctlStart = matchMedia("(max-width:760px)").matches;
+try{
+  const saved = localStorage.getItem("eeg-controls-collapsed");
+  if(saved !== null) ctlStart = saved === "1";
+}catch(_){}
 setControlsCollapsed(ctlStart);
 
 render();

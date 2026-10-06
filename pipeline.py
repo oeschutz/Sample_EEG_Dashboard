@@ -1,15 +1,15 @@
 """
-NEW-EEG-PIPELINE : Galea EEG processing + Holm et al. (2009) cognitive-load index
+Galea EEG processing + Holm et al. (2009) cognitive-load index
 ================================================================================
 
-This file re-implements the steps of the OpenBCI/Galea example pipeline
-(Example-pipeline/*.ipynb) *verbatim* over the recordings in "EEG Recordings/",
+This file re-implements the steps of the OpenBCI/Galea example notebooks
+*verbatim* over the recordings in "EEG Recordings/",
 reports data cleanliness at every step, and then computes the Holm et al. (2009)
 frontal-theta / parietal-alpha brain-load index for every window of every task
 recording.
 
-Every deviation from either the example pipeline or the Holm paper was approved
-by the user before it was written, and each one is recorded in PROVENANCE.md.
+Every deviation from either the example pipeline or the Holm paper is marked
+`DEVIATION` inline at the point where it is made.
 Search this file for "DEVIATION" to find them inline.
 
 Outputs (written to ./outputs/, each carrying a `run_meta` block recording argv,
@@ -17,8 +17,8 @@ the parameter set and whether the run was filtered):
     qc_steps.csv          per-recording, per-step cleanliness verdicts
     qc_steps.json         same, machine readable
     cognitive_load.json   per task recording: the per-window Holm index for all
-                          4 artifact modes x 2 ocular modes, PLUS the four
-                          section-7 measures for 2 ocular modes x 2 references
+                          4 artifact modes x 3 ocular modes, PLUS the four
+                          extra measures for 3 ocular modes x 2 references
     baselines.json        per baseline recording: the resting-baseline median of
                           every measure, for every toggle combination
     variants/             the parameter sweep (added 2026-09-01): two .npz per
@@ -32,25 +32,26 @@ the parameter set and whether the run was filtered):
                           per-window peak amplitudes
                           and per-channel robust sigma the dashboard thresholds
                           against. index.json names them. Deletable and
-                          rebuildable; see PROVENANCE.md section 8.
+                          rebuildable from a re-run.
 
 Usage:
     python pipeline.py                              # run everything
     python pipeline.py --limit 2                    # smoke test on the first 2
-    python pipeline.py --only "p09/task_agent"      # substring filter on the key
+    python pipeline.py --only "p01/task_agent"      # substring filter on the key
 
 A filtered run still writes the canonical filenames, but marks
 `run_meta.partial_run` and prints a warning; do not read a filtered run as a
 complete one.
 
 Scope note: this reproduces the EEG half of the example pipeline. The PPG /
-heart-rate analysis of example_baseline_vs_task.ipynb is NOT implemented. The aux
-files are located but never read. A resting-baseline contrast IS computed (step 10,
-added 2026-08-28) -- the final two minutes of each baseline block, subtracted from
-the paired task recording; see PROVENANCE.md section 7.
+heart-rate analysis is NOT implemented, and nothing here reads the aux file's
+EDA, PPG, temperature or battery columns -- but the aux file IS read, for its
+IMU, which drives the `Head motion` artifact mode (step 12). A baseline contrast
+is computed in step 10: one of three selectable segments of each baseline block,
+subtracted from the paired task recording.
 
-Seven processing choices that were fixed constants are now dashboard controls
-(PROVENANCE.md section 8). Four of them change the spectrum and are precomputed by
+Seven processing choices that were fixed constants are now dashboard controls.
+Four of them change the spectrum and are precomputed by
 step 11; three only threshold quantities already shipped and are evaluated in the
 browser as continuous sliders. Every default reproduces the pre-sweep pipeline, and
 verify_default_variant() asserts that on every run, for every recording and every
@@ -61,9 +62,10 @@ The JSON outputs did not change SHAPE, but qc_steps.json gained a step11_variant
 block per recording and all three run_meta blocks gained a `sweep` entry; both are
 additive, so existing readers are unaffected.
 
-Known defects and their resolutions are in CODE_REVIEW.md (2026-08-27),
-CODE_REVIEW_2026-08-28.md (the four-reviewer audit of the section-7 change set)
-and CODE_REVIEW_2026-09-01.md (the two-reviewer audit of the section-8 controls).
+This copy is the TEMPLATE build, meant to run on another group's recordings.
+The study-specific tables -- MANUAL_INTERPOLATION, EXCLUDED_PARTICIPANTS,
+EXCLUDED_RECORDINGS -- ship empty for you to fill in, and the per-recording
+marker repairs the original dataset needed have been removed. See README.md.
 """
 
 from __future__ import annotations
@@ -98,8 +100,8 @@ OUT_DIR = ROOT / "outputs"
 OUT_DIR.mkdir(exist_ok=True)
 
 # ---------------------------------------------------------------------------
-# Parameters transcribed verbatim from Example-pipeline/example_eeg_processing.ipynb
-# and Example-pipeline/example_baseline_vs_task.ipynb
+# Parameters transcribed verbatim from example_eeg_processing.ipynb
+# and example_baseline_vs_task.ipynb
 # ---------------------------------------------------------------------------
 
 EMG_CHANNELS = [1, 2, 3, 4, 7, 8]
@@ -129,11 +131,11 @@ obci_color_palette = {'red': '#cd5241',
                       'blue': '#419eaf',
                       'yellow': '#eeb45b'}
 
-# Example-pipeline filter settings (example_eeg_processing.ipynb cell 24)
+# Example-notebook filter settings (example_eeg_processing.ipynb cell 24)
 LOWCUT = 0.5
 HIGHCUT = 100.0
 
-# Example-pipeline epoching (example_eeg_processing.ipynb cell 34)
+# Example-notebook epoching (example_eeg_processing.ipynb cell 34)
 EPOCH_DUR = 2.0
 EPOCH_OVERLAP = 0.0
 
@@ -159,7 +161,7 @@ HOLM_REJECT_UV = 70.0          # paper: "excluded epochs containing other artefa
 
 # DEVIATION (approved): the Galea montage has no Fz. Frontal theta is taken from
 # the TIME-DOMAIN mean of F1 and F2, the two 10-10 sites immediately flanking Fz.
-# Sources cited in PROVENANCE.md.
+# Sources are cited inline beside each constant.
 #
 # Revised 2026-08-27 after code review. This previously averaged the two channels'
 # POWER, which is dominated by whichever channel is louder: the measured F2/F1
@@ -230,7 +232,7 @@ AMPLITUDE_BOUND_MIN_N = 100
 #
 # CORRECTION (code review, 2026-08-27; comment fixed 2026-08-28). This used to
 # claim "5 sigma against a typical clean-EEG sigma of ~14 uV reproduces Holm's
-# 70 uV". That claim was disproved and retracted in PROVENANCE.md section 3.4 --
+# 70 uV". That claim was disproved and retracted --
 # measured across the 22 task recordings the thresholds span 75.5-1876.0 uV
 # (median 148.5) and only 45% fall within 2x of 70 uV. The retraction reached the
 # provenance document but not this comment, which went on asserting it. Because
@@ -401,7 +403,7 @@ ICA_MAX_ITER = 1000
 # 0.5 is chosen conservatively, because removing a component is expensive on ten
 # channels -- each one carries real cortical signal along with the artifact, so a
 # loose threshold costs more EEG than it saves. It has NO published basis and is
-# recorded in UNSOURCED_THRESHOLDS.md as such. The per-recording maximum
+# and is flagged as such wherever it is used. The per-recording maximum
 # correlation is written into the QC either way, so a reader can see how close
 # each recording came to the line.
 ICA_EOG_R = 0.5
@@ -411,7 +413,7 @@ ICA_EOG_R = 0.5
 #
 # Four further measures are computed per 4 s window alongside the Holm index and
 # shown on their own dashboard tabs. Every parameter below was put to the user and
-# chosen by them; see PROVENANCE.md section 7. Nothing here is inferred.
+# chosen by them. Nothing here is inferred.
 #
 #   fm_theta            frontal midline theta  -- theta power of the time-domain
 #                       mean of F1 and F2. Always the full F1+F2 mean, and since
@@ -500,15 +502,15 @@ DEFAULT_EPOCH_S = 4.0                      # == HOLM_WINDOW_SEC
 # together". This is a property of the WINDOW GRID, not of any criterion, which
 # is why it is applied before the masks rather than as one of them.
 #
-# Two recordings in this dataset contain a discontinuity, and both are already
-# named in their step 2 QC:
+# A discontinuity reaches this point one way only: the recording itself has a
+# gap, where samples either side are not adjacent in real time -- a dropout, or
+# a stream that stopped and restarted. Any recording carrying one is named in
+# its own step 2 QC, which records the gap count and the largest.
 #
-#   p02/task_ai_speedscore    a 449.11 s excision. The interval was cut at the
-#                             user's instruction and the remainder treated as
-#                             continuous, so exactly one window per epoch length
-#                             straddles the splice.
-#   p04/task_agent_personal   a 3.91 s dropout -- 2.9 s of task never recorded.
-#                             Not deliberate, same defect.
+# This template no longer SPLICES: the original study cut a long interval out of
+# one recording by hand and treated the remainder as continuous, which created a
+# discontinuity deliberately. That machinery was removed with the rest of the
+# per-recording repairs, so what is left here handles recorded gaps only.
 #
 # WHY 0.5 s. It is not tuned, and it is not independent: it is exactly the
 # threshold step2_segment already uses to call something an internal data gap
@@ -665,10 +667,19 @@ def recording_arm(rec: dict) -> str:
     """
     m = re.match(r"^(?:task|baseline)_(agent|ai|none)_", rec["recording"])
     if not m:
+        # The arm is NOT only a MANUAL_INTERPOLATION key -- it is how the
+        # condition is read for every recording, and the dashboard's own
+        # condition_label() parses the same tokens out of the same name. The
+        # message used to blame MANUAL_INTERPOLATION, which sends a reader to an
+        # empty table the template tells them is optional.
         raise ValueError(
-            f"cannot read an arm (agent/ai/none) out of recording name "
-            f"{rec['recording']!r} for {rec['key']}; MANUAL_INTERPOLATION is "
-            f"keyed by (participant, arm) and cannot be resolved without one")
+            f"cannot read an arm out of recording name {rec['recording']!r} "
+            f"(for {rec['key']}). The name must start "
+            f"'task_<arm>_<framing>' or 'baseline_<arm>_<framing>', where "
+            f"<arm> is one of agent/ai/none -- that is the only place the "
+            f"condition is recorded. Rename the recording folder, or change the "
+            f"arm vocabulary in recording_arm() here and in condition_label() "
+            f"in build_dashboard.py")
     return m.group(1)
 
 
@@ -752,7 +763,8 @@ def interp_token(chans) -> str:
     would take the sweep from 720 cells to 1800 and the deliverable from 365 MB
     to roughly 720 MB. Stored per distinct channel list it is 2.2 signals per
     group instead of 5, and the archive shrinks rather than grows.
-    PROVENANCE.md section 8.23 has the measured figures.
+    The figures above were measured on the original study's dataset; they will
+    differ on yours.
     """
     return "+".join(chans) if chans else "-"
 
@@ -784,7 +796,7 @@ def assert_manual_interpolation(recs: list[dict]) -> None:
     instruction for a group that is genuinely absent from the list -- so the
     typo would ship as a result rather than as an error.
     """
-    groups, problems = set(), []
+    groups, problems, unreadable = set(), [], []
     # (participant, arm) -> the distinct conditions under it. sbx ran `none`
     # under BOTH framings, so for that participant an arm does not name one
     # task/baseline pair and a manual entry would apply to both at once.
@@ -806,7 +818,13 @@ def assert_manual_interpolation(recs: list[dict]) -> None:
             # must not silently resolve; swallowing it here let validation pass
             # at second zero and moved the failure into the middle of the sweep,
             # where the driver turns it into a per-recording `error:` row.
-            problems.append(f"{r['key']!r}: {exc}")
+            #
+            # Kept SEPARATE from `problems`: a misnamed recording is a different
+            # fault with a different remedy. It breaks the condition for every
+            # purpose, and has nothing to do with whether MANUAL_INTERPOLATION
+            # is right -- reporting it under that heading sent the reader to a
+            # table this template ships empty.
+            unreadable.append(f"{r['key']!r}: {exc}")
     for (p, arm), chans in sorted(MANUAL_INTERPOLATION.items()):
         if (p, arm) not in groups:
             problems.append(
@@ -834,6 +852,10 @@ def assert_manual_interpolation(recs: list[dict]) -> None:
                 if p in EXCLUDED_PARTICIPANTS}
     if excluded:
         problems.append(f"entries for excluded participants: {sorted(excluded)}")
+    if unreadable:
+        raise SystemExit(
+            f"{len(unreadable)} recording name(s) do not carry a readable "
+            f"condition:\n  " + "\n  ".join(unreadable))
     if problems:
         raise SystemExit("MANUAL_INTERPOLATION is inconsistent with the data:\n  "
                          + "\n  ".join(problems))
@@ -938,7 +960,7 @@ DEFAULT_BASELINE_SEGMENT = "rest"
 # derive_amplitude_bounds() and applied everywhere by apply_amplitude_labels().
 
 # ---------------------------------------------------------------------------
-# Data-set specific decisions (all approved by the user; see PROVENANCE.md)
+# Data-set specific decisions (all approved by the researcher)
 # ---------------------------------------------------------------------------
 
 TASK_MARKER = 8.0
@@ -1027,7 +1049,7 @@ def make_galea_mne_montage(eeg_channel_locations, verbose: bool = False) -> mne.
     """
     Creates a montage for the Galea EEG device.
 
-    Verbatim from Example-pipeline/example_eeg_processing.ipynb (cell 13).
+    Verbatim from example_eeg_processing.ipynb (cell 13).
     """
     mont1020 = mne.channels.make_standard_montage('standard_1020')
     kept_channels = eeg_channel_locations.values()
@@ -1050,7 +1072,7 @@ def calc_eeg_band_power(epochs: mne.Epochs,
     Calculates the power spectral density (PSD) of the EEG data
     in the specified frequency range.
 
-    Verbatim from Example-pipeline/example_eeg_processing.ipynb (cell 32),
+    Verbatim from example_eeg_processing.ipynb (cell 32),
     including the min-max normalization on the final line.
     """
     psds, freqs = epochs.compute_psd(fmin=f_low, fmax=f_high).get_data(return_freqs=True)
@@ -1099,7 +1121,7 @@ def calc_eeg_band_power_absolute(epochs: mne.Epochs,
 
 def remove_outliers(data, z_thresh=3):
     """
-    Verbatim from Example-pipeline/example_baseline_vs_task.ipynb (cell 12).
+    Verbatim from example_baseline_vs_task.ipynb (cell 12).
 
     NOT CALLED. The `holm_imputed` mode reproduces this function's interpolation
     idiom inline (see step8b_holm_index) rather than calling it, because it
@@ -1114,7 +1136,7 @@ def remove_outliers(data, z_thresh=3):
 
 def extract_data_within_marker(data, marker_value):
     """
-    Verbatim from Example-pipeline/example_baseline_vs_task.ipynb (cell 8).
+    Verbatim from example_baseline_vs_task.ipynb (cell 8).
 
     NOT CALLED. Retained so the example pipeline's own logic is visible for
     comparison. `step2_segment` re-implements it positionally with `.iloc`
@@ -1141,9 +1163,22 @@ def discover_recordings() -> list[dict]:
     for exg in sorted(DATA_DIR.glob("*/*/openbci-raw-exg_*.txt")):
         folder = exg.parent
         session = folder.parent.name
-        # Any id up to the first hyphen, not just `p<digits>`: `sbx` (added
-        # 2026-09-16) is a participant id too, and the old pattern crashed on it.
-        pid = re.match(r"galea_session_([^-]+)-", session).group(1)
+        # Any id up to the first hyphen, not just `p<digits>` -- a non-numeric
+        # participant id is a participant id too.
+        m = re.match(r"galea_session_([^-]+)-", session)
+        if not m:
+            # This used to be `.group(1)` on the match directly, so a folder
+            # named anything else died on `'NoneType' object has no attribute
+            # 'group'` without naming the folder or the pattern. It is the first
+            # thing a new dataset trips over, so it gets a real message.
+            raise SystemExit(
+                f"session folder {session!r} does not match the expected name "
+                f"'galea_session_<participant>-<anything>'. The participant id "
+                f"is read from between 'galea_session_' and the first hyphen, "
+                f"so it cannot itself contain one. Rename the folder, or change "
+                f"this pattern in discover_recordings().\n"
+                f"  full path: {folder.parent}")
+        pid = m.group(1)
         stamp = exg.name.replace("openbci-raw-exg_", "").replace(".txt", "")
         recs.append(dict(
             participant=pid,
@@ -1633,7 +1668,7 @@ def fit_ica_paired(task_preps: list[dict], base_prep: dict | None):
     Added 2026-09-05, on the same reasoning as detect_bad_channels_paired and
     after review found the same defect: fitting separately gave the two sides of
     every log ratio DIFFERENT components to lose. Re-measured over all 22 pairs
-    on 2026-09-08 with ica_solo_survey.py (the first estimate here was "four of
+    on 2026-09-08 by a separate survey (the first estimate here was "four of
     nine sampled"):
 
         12 of 22 pairs would have been corrected on ONE SIDE ONLY.
@@ -2028,10 +2063,15 @@ def detect_bad_channels_paired(task_preps: list[dict], base_prep: dict | None):
     rule.
 
     A GROUP, not strictly a pair, because a baseline can serve more than one task
-    file: p05's task was split into task_ai_speedscore_1 and _2, both resolving to
-    baseline_ai_speedscore. Deciding per pair would give that baseline two
-    different lists and reinstate the asymmetry for whichever task lost. Every
-    task in the group joins the concatenation and every member gets the one list.
+    file: a task split across two files -- `task_ai_speedscore_1` and `_2` -- has
+    both halves resolving to one `baseline_ai_speedscore`. Deciding per pair
+    would give that baseline two different lists and reinstate the asymmetry for
+    whichever task lost. Every task in the group joins the concatenation and
+    every member gets the one list.
+
+    NOTE this path is UNTESTED in the template. The original study's only split
+    recording belonged to a participant it excluded, so the code ran but the
+    branch never did. If your data has a split recording, check it.
     p05 is excluded, so nothing exercises that path today -- it is here so a
     future split recording is not silently mishandled.
 
@@ -2593,7 +2633,7 @@ def step8b_holm_index(interp_data: mne.io.RawArray,
 # STEP 9 - The four additional dashboard measures (added 2026-08-28)
 #
 # These are NOT Holm measures. Every parameter was chosen by the user; see
-# PROVENANCE.md section 7. Three decisions are load-bearing and are repeated here
+# Three decisions are load-bearing and are repeated here
 # because they are easy to misread from the numbers alone:
 #
 #   1. NO AMPLITUDE GATE. The user chose to compute these for every task
@@ -2679,7 +2719,7 @@ def _peaks_and_robust_thresholds(mask_raw: mne.io.RawArray, n_win: int,
         channels P3, P4) came out byte-identical.
       * Switching reference changed which windows were retained -- mean
         |delta retention| 7.4 pp, max 33.0 pp -- so the toggle was not a clean A/B.
-        This is the same defect CODE_REVIEW.md found in the ocular toggle and which
+        This is the same defect review found in the ocular toggle and which
         was fixed on 2026-08-27 by detecting bad channels once; the fix is extended
         to the reference toggle here.
 
@@ -3256,9 +3296,10 @@ def window_times(seg_times: np.ndarray, epoch_s: float, n_win: int,
     """
     Elapsed time at each window start, from the RECORDED timestamps.
 
-    Not an assumed grid: p04 has a 3.91 s dropout and p02 a 449 s excised splice,
-    either of which would put every later window at the wrong time if window
-    index were simply multiplied by the epoch length.
+    Not an assumed grid. Any gap in the recording -- a dropout, or a stream that
+    stopped and restarted -- puts every later window at the wrong time if the
+    window index is simply multiplied by the epoch length. A few seconds lost
+    early in a 20-minute task is enough to misplace the end of it.
     """
     step = int(round(epoch_s * sfreq))
     return [round(float(seg_times[w * step] - seg_times[0]), 3)
@@ -3312,15 +3353,14 @@ def discontinuous_windows(seg_times: np.ndarray, n_samp: int,
     That reach is the point, and the first version of this function did not have
     it: it flagged only the window that CONTAINED the jump.
 
-    WHY CONTAINMENT IS NOT ENOUGH. step2_segment makes the splice; step5_bandpass
-    filters afterwards, with a 1651-tap zero-phase FIR at the default cutoffs.
+    WHY CONTAINMENT IS NOT ENOUGH. The gap is already in the segment when
+    step5_bandpass runs, with a 1651-tap zero-phase FIR at the default cutoffs.
     So the step at the join is smeared 3.3 s in BOTH directions before any window
     is cut, and a window merely adjacent to the join carries the ringing without
-    containing the join. On p02/task_ai_speedscore at the 4 s default that is
-    window 164 as well as 163; at 1 s it is 652-659, eight windows, of which the
-    containment rule caught one. PROVENANCE.md records this as "roughly three
-    windows are corrupted, not one ... they enter mode `none` at full weight",
-    which was true of the containment rule and is what this closes.
+    containing the join. Roughly three windows are corrupted at the 4 s default
+    rather than one, and more at shorter window lengths, where the same 3.3 s of
+    ringing covers more of them -- under the containment rule all but one of
+    those entered mode `none` at full weight. This closes that.
 
     The dilation is in SAMPLES around the offending step, then mapped to windows,
     rather than window-by-window: a window is in when any part of it lies within
@@ -3376,7 +3416,7 @@ def compute_variant_bundle(oc_by_mode: dict, interp_lists: dict,
     hardware-referenced, EEG-only Raw -- the same object step 8b and step 9 use
     for their masks. Bad channels are passed in rather than re-detected, so the
     interpolation toggle is a clean A/B over one fixed list. That is the defect
-    CODE_REVIEW.md found in the ocular toggle, generalised to every toggle here.
+    review found in the ocular toggle, generalised to every toggle here.
 
     `interp_lists` maps each of the five INTERPOLATION_MODES to the channel list
     that mode interpolates for THIS group -- interp_lists_for() builds it. Since
@@ -3634,7 +3674,7 @@ def verify_default_variant(bundle: dict, reference: np.ndarray | None) -> dict:
 
     The default cell is (interpolation on, ocular none, hardware reference, 4 s
     epochs, Hann taper) -- the configuration every published number in
-    PROVENANCE.md was computed under. This runs on every pipeline invocation, for
+    the published figures were computed under. This runs on every invocation, for
     TASKS AND BASELINES, and its result is written into
     outputs/variants/index.json; build_dashboard.py refuses to build if it fails.
 
@@ -3964,7 +4004,7 @@ def _baseline_segment(segment: str, full_by_mode: dict, seg_times: np.ndarray,
     """
     One baseline segment: medians per measure per toggle, plus its own sweep.
 
-    Two decisions from the user, both recorded in PROVENANCE.md section 7 and both
+    Two decisions from the researcher, both
     unchanged by the 2026-09-02 extension:
 
     * The artifact criterion selected for the TASK is applied to the baseline's
@@ -4277,8 +4317,8 @@ def _baseline_qc(out: dict, seg_times: np.ndarray, qc: dict) -> None:
 # deg/s but the file header does not say and no vendor specification is in this
 # repository. THIS IS WHY THE THRESHOLD IS RELATIVE. An absolute cut in units
 # that cannot be named is exactly the unsourced-threshold problem that the
-# 1-50 uV amplitude range turned out to be (see UNSOURCED_THRESHOLDS.md and
-# PROVENANCE.md 2026-09-03). A per-recording criterion needs no unit at all.
+# 1-50 uV amplitude range turned out to be. A per-recording criterion needs no
+# unit at all.
 #
 # ALIGNMENT is by absolute Timestamp, the same clock the exg file uses: across
 # all 49 recordings the two streams start a median 4.0 ms apart (max 16.1) and
@@ -4344,11 +4384,11 @@ MOTION_K_SLIDER = (1.0, 8.0, 0.25, 3.0)
 MOTION_MIN_SAMPLES = 10
 
 # How much longer than its nominal duration a window's wall-clock span may run
-# before its motion is refused. A window that straddles an excised stretch spans
-# the excision too, so its aux samples describe data the pipeline removed. 2.0
-# is deliberately loose -- it has to clear ordinary jitter and the sub-second
-# dropouts in this dataset, and only needs to catch a straddle, which overshoots
-# by orders of magnitude (449 s against a 4 s window on p02/task_ai_speedscore).
+# before its motion is refused. A window that straddles a gap spans the gap too,
+# so its aux samples cover wall-clock time the EEG does not. 2.0 is deliberately
+# loose -- it has to clear ordinary jitter and sub-second dropouts, and only
+# needs to catch a straddle, which overshoots by orders of magnitude: a gap of
+# minutes inside a 4 s window is not a borderline call.
 MOTION_MAX_SPAN_FACTOR = 2.0
 
 # Columns read from the aux file. Named explicitly so a file with a different
@@ -4487,11 +4527,10 @@ def motion_matrix(imu: dict | None, seg_times: np.ndarray, n_samp: int,
         out[w, 2] = n_in
         # A window that STRADDLES AN EXCISION spans far more wall-clock than its
         # own duration, and the aux samples between its first and last EEG sample
-        # include everything the pipeline deliberately cut out. On
-        # p02/task_ai_speedscore, where step 2 excises 449 s, the straddling
-        # window collects ~23,000 aux samples instead of ~200 and its "motion"
-        # would be the mean over seven and a half minutes of removed recording --
-        # not NaN, not flagged, and almost certainly rejected.
+        # cover the gap as well. A window straddling a gap of minutes collects
+        # tens of thousands of aux samples instead of a couple of hundred, and
+        # its "motion" would be the mean over all the wall-clock time the EEG
+        # skipped -- not NaN, not flagged, and almost certainly rejected.
         #
         # Guarded on the window's own time span rather than on the sample count,
         # because the span is what identifies the straddle; the count is only its
@@ -4526,9 +4565,9 @@ VARIANT_DIR = OUT_DIR / "variants"
 # A filtered run writes here instead, so a 30-second smoke test cannot destroy a
 # 40-minute complete sweep. Found on review 2026-09-01: write_variant_archives
 # unlinked every archive before writing and was called unconditionally, so
-# `python pipeline.py --only p05` (an excluded participant) emptied the directory
-# and wrote an index of zero recordings -- indistinguishable by inspection from a
-# complete run.
+# a filter naming only excluded recordings emptied the directory and wrote an
+# index of zero recordings -- indistinguishable by inspection from a complete
+# run.
 VARIANT_DIR_PARTIAL = OUT_DIR / "variants_partial"
 
 
@@ -5152,9 +5191,11 @@ def baseline_key_for_task(rec: dict) -> str:
     task_agent_personal <-> baseline_agent_personal. Pairing is by folder name,
     which is 1:1 for every participant analysed.
 
-    A trailing _1/_2 suffix is stripped: p05's task was split across two files and
-    `task_ai_speedscore_1` would otherwise resolve to a baseline that does not
-    exist. p05 is excluded so nothing reads it today, but the key was wrong.
+    A trailing _1/_2 suffix is stripped: a task split across two files has halves
+    named `task_ai_speedscore_1` and `_2`, and without stripping, each would
+    resolve to a baseline that does not exist. Like the group handling in
+    detect_bad_channels_paired, this is UNTESTED -- the only split recording in
+    the original study belonged to an excluded participant.
 
     Module-level since 2026-09-04. It used to be a closure inside main() used only
     to label cognitive_load.json; the bad-channel decision is now made per pair
@@ -5342,6 +5383,21 @@ def main() -> None:
     assert_manual_interpolation(recs)
     assert_excluded_recordings(recs)
 
+    # Refuse a run that would analyse nothing, BEFORE anything is written. The
+    # end-of-run guard below catches this too, but only after
+    # write_variant_archives() has already emptied outputs/variants/ -- so by the
+    # time it fires the previous good archive is gone. Excluding everything is an
+    # ordinary slip now that EXCLUDED_* are empty knobs for the reader to fill,
+    # not a hypothetical.
+    kept = [r for r in recs if not exclusion_reason(r)]
+    if recs and not kept:
+        raise SystemExit(
+            f"every one of the {len(recs)} discovered recordings is excluded, so "
+            f"there is nothing to analyse. Check EXCLUDED_PARTICIPANTS "
+            f"({EXCLUDED_PARTICIPANTS or 'empty'}) and EXCLUDED_RECORDINGS "
+            f"({sorted(EXCLUDED_RECORDINGS) or 'empty'}). Nothing was written; "
+            f"outputs/ is untouched.")
+
     if args.only:
         recs = [r for r in recs if args.only in r["key"]]
     if args.limit:
@@ -5354,7 +5410,7 @@ def main() -> None:
     # finished a group at a time instead of one at a time.
     #
     # The group key is the baseline's key, so a baseline serving two task files
-    # collects all of them -- see detect_bad_channels_paired on p05.
+    # collects all of them -- see detect_bad_channels_paired.
     groups, group_order = {}, []
     for rec in recs:
         gkey = (baseline_key_for_task(rec) if rec["kind"] == "task"
@@ -5770,13 +5826,22 @@ def main() -> None:
     # and it should stop rather than overwrite good outputs with nothing.
     n_ok = sum(1 for r in results if r.get("status") == "ok")
     failed = [r for r in results if str(r.get("status", "")).startswith("error")]
+    n_excluded = sum(1 for r in results
+                     if r.get("status") == "excluded_by_user_decision")
     if results and n_ok == 0:
+        # "Nothing succeeded" has two quite different causes and they used to
+        # print the same sentence. An all-excluded run has no error to quote, so
+        # the old message reported `The first error was: unknown` for a run in
+        # which nothing had gone wrong at all.
+        why = (f"EVERY recording failed ({len(failed)} of {len(results)}). The "
+               f"first error was: {failed[0].get('status')}."
+               if failed else
+               f"NO recording was analysed: {n_excluded} of {len(results)} are "
+               f"excluded by EXCLUDED_PARTICIPANTS or EXCLUDED_RECORDINGS, and "
+               f"the rest produced no result.")
         raise SystemExit(
-            f"EVERY recording failed ({len(failed)} of {len(results)}). The first "
-            f"error was: {failed[0].get('status') if failed else 'unknown'}. "
-            f"outputs/ has been left as this run wrote it, which may be empty -- "
-            f"the JSON files are tracked in git and the variants archive can be "
-            f"rebuilt by fixing the fault and re-running.")
+            f"{why} outputs/ has been left as this run wrote it, which may be "
+            f"empty -- fix the fault and re-run to rebuild it.")
     if failed and not run_meta["partial_run"] and len(failed) > 0.5 * len(results):
         raise SystemExit(
             f"{len(failed)} of {len(results)} recordings failed, which is more "
