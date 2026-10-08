@@ -22,8 +22,8 @@ Several of these fail silently: the numbers still come out, they are just wrong.
 | A few bad channels | One noisy channel skews every metric that uses it | Interpolate it by spherical spline, chosen from a manual list or by automatic detection |
 | Interpolating both frontal channels | F1 and F2 are rebuilt from mostly the same neighbours, so they end up nearly identical. Asymmetry measures break | Keep a switch that controls whether to interpolate F1 and F2 when both are flagged |
 | Line noise | 60 Hz mains noise and its harmonics contaminate the spectrum | Notch filter at 60 Hz and harmonics |
-| Blinks and eye movement | Ocular artifacts leak into EEG. EOG channels are not always clean, and the literature uses different removal methods | Offer None, EOG regression and ICA, and compare them |
-| Reference choice | Hardware, average and REST references give different values | Compute all three and let the reader switch |
+| Blinks and eye movement | Blinks and other eye movements cause spikes in the EEG. EOG channels (which capture eye movements) are not always clean, and the literature uses different removal methods | Offer None, EOG regression and ICA, and compare them |
+| Reference choice | Hardware, average, and REST references give different values | Compute all three and let the reader switch. Hardware is the reference built into the helmet (on the left earlobe). Average subtracts the mean voltage of all channels from each channel. REST references the signal to a theoretically neutral point. |
 | Spectral estimator and window length | Hann, multitaper, Welch and boxcar estimators, and 1 to 10 s windows, all shift the numbers | Precompute every option. Pin the MNE version, because its spectral defaults have changed between versions |
 | Data loss | A window spanning a gap measures a step in the signal, not the brain | Take window times from recorded timestamps, never an assumed grid. Drop every non-contiguous window |
 | Missing or extra markers | The task segment starts or ends in the wrong place | Repair a single marker if a full block follows it. Flag segments far shorter than expected. Fix false starts by hand |
