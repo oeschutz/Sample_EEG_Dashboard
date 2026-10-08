@@ -1,6 +1,6 @@
 # Working with Galea EEG Data: Pitfalls, Pipeline and Dashboard
 
-Oct 7, 2026 · Rudrajit Choudhuri
+EPIC Lab, Oregon State University · Olivia Schutz, Rudrajit Choudhuri, Anita Sarma
 
 EEG from a consumer research headset is easy to record and easy to misread. We built a dashboard to analyze 44 Galea recordings from a user study. Along the way we hit most of the usual EEG traps. This post covers what went wrong, how our pipeline handles each problem, and how the dashboard makes processing decisions visible instead of hiding them.
 
