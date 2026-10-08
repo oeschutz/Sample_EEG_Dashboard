@@ -148,16 +148,6 @@ The dashboard is built around our study, and two of its failure modes give no wa
 - **Head-motion rejection can silently do nothing.** If no IMU data was recorded, or no aux file exists, rejection is skipped. The only sign is a small line of text in that recording's expanded view. Make sure the aux data recorded properly if you plan to use this mode.
 - **An empty Manual List silently does nothing.** With the interpolation mode set to Manual List and no list given, no interpolation happens and no warning appears.
 
-## Beyond the data: the headset
-
-Some problems start before any processing, with how the headset fits.
-
-### Using the headset in user studies
-
-- **Curly hair.**
-- **The helmet moving during the study.**
-- **It cannot be worn with glasses, and it is uncomfortable for people with large heads.**
-
 ## Try it yourself: set up the dashboard step by step
 
 You can have the sample dashboard open in a few minutes, with no EEG data and no coding. The code is on GitHub at [oeschutz/Sample\_EEG\_Dashboard](https://github.com/oeschutz/Sample_EEG_Dashboard). The steps below build the dashboard from synthetic sample data, the same data as in the screenshots above.
