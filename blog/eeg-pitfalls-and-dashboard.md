@@ -32,11 +32,10 @@ Several of these fail silently: the numbers still come out, they are just wrong.
 | Head motion without IMU data | Motion rejection does not occur if the aux file is missing, and does not warn the user of this. | Confirm the aux data recorded properly before relying on head-motion rejection |
 | Empty or mistyped manual interpolation list | No interpolation happens, with no warning | Check the list. The pipeline's validator exits on entries that match no recording or name an unknown channel |
 | Interpolated data treated as measured | A metric built from rebuilt channels looks like a real measurement | Flag recordings as partly or fully synthetic, per metric |
-| Judging amplitude against a fixed range | A fixed range does not fit every headset | Derive the plausible band from the run itself and read it as "unusual here", not "impossible". Needs at least 10 recordings |
-| Wrong baseline segment | Correcting against the wrong minutes makes every corrected value wrong | Let the reader pick the segment. Set the segment bounds to match your own baseline protocol |
+| Judging amplitude against a fixed range | Amplitude ranges depend on the headset | Derive the plausible band from the run itself and read it as "unusual here", not "impossible". Needs at least 10 recordings |
+| Wrong baseline segment | Correcting against the wrong baseline segment makes every corrected value wrong | Let the reader pick the segment. Set the segment bounds to match your own baseline protocol |
 | Task without its baseline | No denominator for baseline correction | Exclude both halves of a pair together |
 | Mislabelled recordings | Condition comes only from the folder name | Follow the naming grammar. The pipeline stops on a name it cannot parse |
-| Counting recordings, not usable recordings | Group analysis looks larger than it is | Count only recordings where both the task and its baseline are plausible on that metric's own channels |
 
 ## Before the pipeline: look at every power spectrum
 
