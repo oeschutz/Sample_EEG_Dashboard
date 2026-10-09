@@ -6,7 +6,7 @@ EEG from a consumer research headset is easy to record and easy to misread. We b
 
 ## What we recorded
 
-We recorded EEG from 12 participants: 22 task recordings of 20 minutes each, plus one 6-minute baseline for each task. Each baseline was recorded in the same session, without adjusting the helmet. That makes 44 recordings.
+We recorded EEG from 12 participants: 22 task recordings of 20 minutes each, plus one 6-minute baseline for each task. Each baseline was recorded in the same session, without adjusting the headset. That makes 44 recordings.
 
 The Galea montage has ten EEG channels: F1, F2, C3, C4, P3, P4, O1, O2, Cz and Pz. The sampling rate is 250 Hz, and the hardware reference is SRB2 on the left earlobe. There is no Fz, which matters later.
 
@@ -23,7 +23,7 @@ Several of these fail silently: the numbers still come out, they are just wrong.
 | Interpolating both frontal channels | F1 and F2 are rebuilt from mostly the same neighbours, so they end up nearly identical. Asymmetry measures break | Keep a switch that controls whether to interpolate F1 and F2 when both are flagged |
 | Line noise | 60 Hz mains noise and its harmonics contaminate the spectrum | Notch filter at 60 Hz and harmonics |
 | Blinks and eye movement | Blinks and other eye movements cause spikes in the EEG. EOG channels (which capture eye movements) are not always clean, and the literature uses different removal methods | Toggle options: None, EOG regression and ICA, and compare them |
-| Reference choice | Hardware, average, and REST references give different values | Compute all three and let the reader switch. Hardware is the reference built into the helmet (on the left earlobe). Average subtracts the mean voltage of all channels from each channel. REST references the signal to a theoretically neutral point. |
+| Reference choice | Hardware, average, and REST references give different values | Compute all three and let the reader switch. Hardware is the reference built into the headset (on the left earlobe). Average subtracts the mean voltage of all channels from each channel. REST references the signal to a theoretically neutral point. |
 | Spectral estimator and window length | Hann, multitaper, Welch and boxcar estimators, and 1 to 10 s windows, all shift the numbers | Precompute every option. Specify the MNE version, because its spectral defaults have changed between versions |
 | Data loss | A window spanning a gap measures a step in the signal, not the brain | Take window times from recorded timestamps, never an assumed grid. Drop every non-contiguous window |
 | Missing or extra markers | The task segment starts or ends in the wrong place | Repair a single marker if a full block follows it. Flag segments far shorter than expected. Fix false starts by hand |
